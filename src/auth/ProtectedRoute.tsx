@@ -10,6 +10,7 @@ import FullPageLoading from '../ui/FullPageLoading';
  */
 function ProtectedRoute() {
   const { isAuthenticated, isLoading } = useAuth();
+  
   const location = useLocation();
 
   if (isLoading) {
