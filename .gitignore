@@ -2,6 +2,3 @@ node_modules
 dist
 .env
 *.local
-**/customer/
-CustomerOAuthCallbackPage.tsx
-src/pages/customer
