@@ -139,7 +139,7 @@ function RegisterPage() {
         ) : (
           <motion.form
             key="register-form"
-            onSubmit={handleSubmit(onSubmit,(errors)=>console.log('❌ ZOD FAILED:', errors))} 
+            onSubmit={handleSubmit(onSubmit)}
             className="w-full max-w-sm"
             variants={containerVariants}
             initial="hidden"

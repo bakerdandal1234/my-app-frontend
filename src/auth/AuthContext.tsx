@@ -19,13 +19,38 @@ import { getAccessToken, setAccessToken, subscribeToAccessToken } from '../api/t
 export interface AuthUser {
   id: string;
   email: string;
-  firstName?: string;
-  lastName?: string;
+  firstName?: string | null;
+  lastName?: string  | null;
   isEmailVerified: boolean;
   isTwoFactorEnabled: boolean;
-  googleId?: string;
-  githubId?: string;
+  googleId?: string | null;
+  githubId?: string | null ;
   createdAt: string;
+}
+
+/**
+ * Runtime type guard for GET /users/me — mirrors isCustomerAccount() in
+ * CustomerAuthContext.tsx. Optional fields are allowed to be missing, but
+ * if present must have the right type.
+ */
+function isAuthUser(data: unknown): data is AuthUser {
+  if (typeof data !== 'object' || data === null) {
+    return false;
+  }
+
+  const value = data as Record<string, unknown>;
+
+  return (
+    typeof value.id === 'string' &&
+    typeof value.email === 'string' &&
+    (value.firstName === null || typeof value.firstName === 'string') &&
+    (value.lastName === null || typeof value.lastName === 'string') &&
+    typeof value.isEmailVerified === 'boolean' &&
+    typeof value.isTwoFactorEnabled === 'boolean' &&
+    (value.googleId === null || typeof value.googleId === 'string') &&
+    (value.githubId === null || typeof value.githubId === 'string') &&
+    typeof value.createdAt === 'string'
+  );
 }
 
 /** Mirrors GET /users/me/access's response shape. */
@@ -110,8 +135,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       try {
         await refreshAccessToken();
         if (cancelled) return;
-        const me = await apiClient.get<AuthUser>('/users/me');
+        const me = await apiClient.get<unknown>('/users/me');
         if (cancelled) return;
+        if (!isAuthUser(me.data)) {
+          throw new Error('Unexpected user response');
+        }
         setUser(me.data);
         await loadAccess();
       } catch {
@@ -129,7 +157,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   async function establishSession(newAccessToken: string): Promise<void> {
     setAccessToken(newAccessToken);
-    const me = await apiClient.get<AuthUser>('/users/me');
+    const me = await apiClient.get<unknown>('/users/me');
+    if (!isAuthUser(me.data)) {
+      throw new Error('Unexpected user response');
+    }
     setUser(me.data);
     await loadAccess();
   }

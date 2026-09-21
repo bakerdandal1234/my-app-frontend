@@ -4,6 +4,7 @@ import {
   setCustomerAccessToken,
 } from './customerTokenStore';
 import { getCustomerCsrfToken } from './customerCsrf';
+import { API_URL } from '../../api/client';
 
 declare module 'axios' {
   export interface AxiosRequestConfig {
@@ -13,8 +14,6 @@ declare module 'axios' {
     _isCustomerRefresh?: boolean;
   }
 }
-
-const API_URL = import.meta.env.VITE_API_URL as string;
 
 /**
  * Axios instance for the customer side of the app.

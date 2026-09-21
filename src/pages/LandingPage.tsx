@@ -107,24 +107,31 @@ function LandingPage() {
                   powerful workspace.
                 </motion.p>
 
-                <motion.div
-                  variants={itemVariants}
-                  className="mt-8 flex flex-col gap-3 sm:flex-row sm:justify-center"
-                >
-                  <Link
-                    to="/login"
-                    className="rounded-lg bg-indigo-600 px-5 py-2.5 text-sm font-medium text-white shadow-lg shadow-indigo-950/30 transition-all hover:bg-indigo-500"
-                  >
-                    Log in
-                  </Link>
+               <motion.div
+  variants={itemVariants}
+  className="mt-8 flex flex-col gap-3"
+>
+  <Link
+    to="/login"
+    className="flex min-h-12 items-center justify-center rounded-xl border border-indigo-400/20 bg-gradient-to-r from-indigo-600 to-violet-600 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-indigo-500/20 transition duration-200 hover:-translate-y-0.5 hover:brightness-110 hover:shadow-indigo-500/30 active:translate-y-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950 motion-reduce:transform-none motion-reduce:transition-none"
+  >
+    Login
+  </Link>
 
-                  <Link
-                    to="/register"
-                    className="rounded-lg border border-white/10 bg-white/5 px-5 py-2.5 text-sm font-medium text-white transition-all hover:bg-white/10"
-                  >
-                    Create an account
-                  </Link>
-                </motion.div>
+  <Link
+    to="/customer/login"
+    className="flex min-h-12 items-center justify-center rounded-xl border border-white/15 bg-white/5 px-6 py-3 text-sm font-semibold text-slate-200 transition duration-200 hover:-translate-y-0.5 hover:border-indigo-400/40 hover:bg-indigo-400/10 hover:text-white active:translate-y-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950 motion-reduce:transform-none motion-reduce:transition-none"
+  >
+    Login as a customer
+  </Link>
+
+  <Link
+    to="/register"
+    className="mt-1 flex min-h-11 items-center justify-center rounded-xl px-6 py-2.5 text-sm font-medium text-indigo-300 transition-colors duration-200 hover:bg-indigo-400/5 hover:text-indigo-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950 motion-reduce:transition-none"
+  >
+    Create an account
+  </Link>
+</motion.div>
               </Card.Content>
             </GlassCard>
           </motion.div>

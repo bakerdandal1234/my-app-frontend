@@ -11,7 +11,23 @@ declare module 'axios' {
   }
 }
 
-const API_URL = import.meta.env.VITE_API_URL as string;
+/**
+ * Base URL of the backend API. Validated once here rather than trusted
+ * silently — a missing/misconfigured env var should fail loudly and
+ * immediately at startup, not surface later as a confusing
+ * `baseURL: undefined` request with no clear explanation. Exported so
+ * customerClient.ts and LoginPage.tsx (OAuth links) reuse this instead of
+ * each redeclaring/re-reading the env var independently.
+ */
+export const API_URL = (() => {
+  const value = import.meta.env.VITE_API_URL;
+  if (!value) {
+    throw new Error(
+      'VITE_API_URL is not set. Check your .env file (see .env.example).',
+    );
+  }
+  return value;
+})();
 
 export const apiClient = axios.create({
   baseURL: API_URL,
@@ -99,3 +115,14 @@ apiClient.interceptors.response.use(
     }
   },
 );
+
+export function startUserGoogleLogin(): void {
+  // Must be a real navigation, not XHR: the browser has to follow Google's
+  // redirects and land on our callback so the binding cookie can be set.
+  window.location.assign(`${API_URL}/auth/google`);
+}
+export function startUserGithubLogin(): void {
+  // Must be a real navigation, not XHR: the browser has to follow Google's
+  // redirects and land on our callback so the binding cookie can be set.
+  window.location.assign(`${API_URL}/auth/github`);
+}

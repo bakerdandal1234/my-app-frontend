@@ -64,12 +64,16 @@ const OAUTH_CALLBACK_BACKGROUND_PULSE_BLOB: AnimatedBackgroundPulseBlob = {
 function OAuthCallbackPage() {
   const [searchParams] = useSearchParams();
   const code = searchParams.get('code');
+  const needsTwoFactor = searchParams.get('twoFactorRequired') === 'true';
+  const [twoFactorCode, setTwoFactorCode] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const navigate = useNavigate();
   const { establishSession } = useAuth();
 
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (needsTwoFactor) return;
     if (!code) {
       setError('This sign-in link is missing its code.');
       return;
@@ -104,7 +108,113 @@ function OAuthCallbackPage() {
     // establishSession/navigate are stable across renders (from context /
     // react-router); only `code` actually changing should re-run this.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [code]);
+  }, [code, needsTwoFactor]);
+
+  async function submitTwoFactor(): Promise<void> {
+    if (isSubmitting || !/^\d{6}$/.test(twoFactorCode)) return;
+    setIsSubmitting(true);
+    setError(null);
+    try {
+      const response = await apiClient.post<{ accessToken: string }>(
+        '/auth/2fa/verify', { code: twoFactorCode }, { _retry: true },
+      );
+      await establishSession(response.data.accessToken);
+      navigate('/home', { replace: true });
+    } catch (err) {
+      setError(getErrorMessage(err));
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  if (needsTwoFactor) {
+    return (
+      <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-slate-950 px-4 text-white">
+        <AnimatedBackground
+          wrapperClassName={OAUTH_CALLBACK_BACKGROUND_WRAPPER_CLASSNAME}
+          blobs={OAUTH_CALLBACK_BACKGROUND_BLOBS}
+          pulseBlob={OAUTH_CALLBACK_BACKGROUND_PULSE_BLOB}
+        />
+
+        <motion.div
+          variants={containerVariants}
+          initial="hidden"
+          animate="visible"
+          className="relative z-10 w-full max-w-md"
+        >
+          <GlassCard>
+            <StatusIconHeader
+              circleClassName="border-indigo-400/20 bg-indigo-500/10"
+              icon={
+                <svg
+                  className="h-8 w-8 text-indigo-300"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <rect x="3" y="11" width="18" height="10" rx="2" />
+                  <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+                </svg>
+              }
+              title="Two-step verification"
+              description="Enter the 6-digit code from your authenticator app to finish signing in."
+            />
+
+            <Card.Content className="px-6 py-5">
+              <motion.form
+                variants={itemVariants}
+                className="space-y-4"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void submitTwoFactor();
+                }}
+              >
+                <input
+                  className="w-full rounded-lg border border-white/10 bg-slate-900 px-4 py-3 text-center text-lg tracking-[0.4em] outline-none focus:border-indigo-400"
+                  value={twoFactorCode}
+                  onChange={(event) =>
+                    setTwoFactorCode(
+                      event.target.value.replace(/\D/g, '').slice(0, 6),
+                    )
+                  }
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  placeholder="000000"
+                  aria-label="Authentication code"
+                  autoFocus
+                />
+
+                {error && (
+                  <p
+                    className="rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300"
+                    role="alert"
+                  >
+                    {error}
+                  </p>
+                )}
+
+                <button
+                  type="submit"
+                  disabled={twoFactorCode.length !== 6 || isSubmitting}
+                  className="w-full rounded-lg bg-indigo-600 px-4 py-3 text-sm font-medium transition-colors hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {isSubmitting ? 'Verifying…' : 'Verify and continue'}
+                </button>
+              </motion.form>
+            </Card.Content>
+
+            <StatusLink to="/login">
+              Back to sign in
+            </StatusLink>
+          </GlassCard>
+        </motion.div>
+      </div>
+    );
+  }
+
 
   if (error) {
     return (

@@ -1,10 +1,13 @@
 import { Navigate } from 'react-router-dom';
-import { Button } from '@heroui/react';
-import { motion, useReducedMotion } from 'framer-motion';
+import { Button, Card } from '@heroui/react';
+import { motion, useReducedMotion, type Variants } from 'framer-motion';
 import { ArrowRight, ShoppingBag } from 'lucide-react';
-
+import AnimatedBackground from '../../components/layout/AnimatedBackground';
 import { startCustomerGoogleLogin } from '../../customer/api/customerClient';
 import { useCustomerAuth } from '../../customer/CustomerAuthContext';
+import GlassCard from '../../components/shared/GlassCard';
+import { itemVariants,containerVariants } from '../../lib/motion-variants';
+
 
 function GoogleIcon() {
   return (
@@ -34,60 +37,7 @@ function GoogleIcon() {
   );
 }
 
-function AnimatedBackground() {
-  const reduceMotion = useReducedMotion();
 
-  return (
-    <div
-      aria-hidden="true"
-      className="pointer-events-none absolute inset-0 overflow-hidden"
-    >
-      <motion.div
-        className="absolute -left-24 top-0 h-80 w-80 rounded-full bg-indigo-500/20 blur-3xl sm:h-96 sm:w-96"
-        animate={
-          reduceMotion
-            ? undefined
-            : {
-                x: [0, 45, 0],
-                y: [0, 35, 0],
-              }
-        }
-        transition={{
-          duration: 16,
-          repeat: Infinity,
-          ease: 'easeInOut',
-        }}
-      />
-
-      <motion.div
-        className="absolute -right-24 bottom-0 h-80 w-80 rounded-full bg-cyan-500/15 blur-3xl sm:h-96 sm:w-96"
-        animate={
-          reduceMotion
-            ? undefined
-            : {
-                x: [0, -40, 0],
-                y: [0, -45, 0],
-              }
-        }
-        transition={{
-          duration: 20,
-          repeat: Infinity,
-          ease: 'easeInOut',
-        }}
-      />
-
-      <div
-        className="absolute inset-0 opacity-[0.04]"
-        style={{
-          backgroundImage:
-            'linear-gradient(#fff 1px, transparent 1px), ' +
-            'linear-gradient(90deg, #fff 1px, transparent 1px)',
-          backgroundSize: '56px 56px',
-        }}
-      />
-    </div>
-  );
-}
 
 function CustomerLoginPage() {
   const { isAuthenticated, isLoading } = useCustomerAuth();
@@ -113,82 +63,77 @@ function CustomerLoginPage() {
 
   return (
     <main className="relative isolate flex min-h-screen items-center justify-center overflow-hidden bg-slate-950 px-4 py-12 text-white">
+      
       <AnimatedBackground />
 
-      <motion.section
-        aria-labelledby="customer-login-title"
-        initial={
-          reduceMotion
-            ? false
-            : { opacity: 0, y: 24, scale: 0.98 }
-        }
-        animate={{ opacity: 1, y: 0, scale: 1 }}
-        transition={{ duration: 0.55, ease: 'easeOut' }}
+      <motion.div
+        variants={containerVariants}
+        initial={reduceMotion ? false : 'hidden'}
+        animate="visible"
         className="relative z-10 w-full max-w-md"
       >
-        <div className="mb-8 text-center">
-          <p className="text-sm font-semibold tracking-[0.25em] text-indigo-300">
-            FLOWDESK
-          </p>
-          <p className="mt-2 text-sm text-slate-400">
-            Your customer account
-          </p>
-        </div>
+        <GlassCard className="mx-auto flex min-h-[calc(100vh-69px)] max-w-7xl items-center justify-center px-6 py-8 lg:px-8">
+          <Card.Content className="px-8 py-12 text-center">
+            <motion.div
+              variants={itemVariants}
+              className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl border border-indigo-400/20 bg-indigo-400/10 text-indigo-300 shadow-[0_0_35px_rgba(129,140,248,0.35)]"
+            >
+              <ShoppingBag aria-hidden="true" className="h-7 w-7" strokeWidth={1.5} />
+            </motion.div>
 
-        <div className="rounded-3xl border border-white/10 bg-slate-900/80 p-7 shadow-2xl shadow-black/30 backdrop-blur-xl sm:p-10">
-          <div className="mx-auto mb-7 flex h-16 w-16 items-center justify-center rounded-2xl border border-indigo-400/20 bg-indigo-400/10 text-indigo-300">
-            <ShoppingBag
-              aria-hidden="true"
-              className="h-7 w-7"
-              strokeWidth={1.5}
-            />
-          </div>
-
-          <div className="text-center">
-            <h1
-              id="customer-login-title"
-              className="text-3xl font-semibold tracking-tight"
+            <motion.h1
+              variants={itemVariants}
+              className="mt-6 text-3xl font-bold tracking-tight"
             >
               Your orders, one place.
-            </h1>
+            </motion.h1>
 
-            <p className="mt-3 text-sm leading-6 text-slate-400">
-              Sign in with Google to view your orders
-              and manage your account.
-            </p>
-          </div>
-
-          <motion.div
-            className="mt-8"
-            whileHover={reduceMotion ? undefined : { y: -2 }}
-            whileTap={reduceMotion ? undefined : { scale: 0.98 }}
-          >
-            <Button
-              type="button"
-              size="lg"
-              onPress={() => startCustomerGoogleLogin()}
-              className="flex min-h-12 w-full items-center justify-center gap-3 rounded-xl bg-white px-4 py-3 font-medium text-slate-900 shadow-sm transition-colors hover:bg-slate-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-indigo-400"
+            <motion.p
+              variants={itemVariants}
+              className="mx-auto mt-3 max-w-md text-sm leading-6 text-slate-400"
             >
-              <GoogleIcon />
-              <span>Continue with Google</span>
-              <ArrowRight
-                aria-hidden="true"
-                className="h-4 w-4 shrink-0 text-slate-500"
-              />
-            </Button>
-          </motion.div>
+              Sign in with Google to view your orders and manage your
+              account.
+            </motion.p>
 
-          <p className="mt-4 text-center text-xs leading-5 text-slate-400">
-            New here? Your account will be created when you sign in.
-          </p>
+            <motion.div variants={itemVariants} className="mt-8">
+              <motion.div
+                whileHover={reduceMotion ? undefined : { y: -2 }}
+                whileTap={reduceMotion ? undefined : { scale: 0.98 }}
+              >
+                <Button
+                  type="button"
+                  size="lg"
+                  onPress={() => startCustomerGoogleLogin()}
+                  className="flex min-h-12 w-full items-center justify-center gap-3 rounded-xl bg-gradient-to-b from-white to-slate-50 px-4 py-3 font-medium text-slate-900 shadow-sm transition-colors hover:from-slate-50 hover:to-slate-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-indigo-400"
+                >
+                  <GoogleIcon />
+                  <span>Continue with Google</span>
+                  <ArrowRight
+                    aria-hidden="true"
+                    className="h-4 w-4 shrink-0 text-slate-500"
+                  />
+                </Button>
+              </motion.div>
+            </motion.div>
 
-          <div className="mt-8 border-t border-white/10 pt-5">
-            <p className="text-center text-xs text-slate-400">
-              Staff accounts sign in separately.
-            </p>
-          </div>
-        </div>
-      </motion.section>
+            <motion.p
+              variants={itemVariants}
+              className="mt-4 text-xs leading-5 text-slate-400"
+            >
+              New here? Your account will be created when you sign in.
+            </motion.p>
+
+            <motion.div variants={itemVariants} className="mt-8">
+              <div className="h-px w-full bg-gradient-to-r from-transparent via-white/10 to-transparent" />
+
+              <p className="mt-5 text-center text-xs text-slate-400">
+                Staff accounts sign in separately.
+              </p>
+            </motion.div>
+          </Card.Content>
+        </GlassCard>
+      </motion.div>
     </main>
   );
 }

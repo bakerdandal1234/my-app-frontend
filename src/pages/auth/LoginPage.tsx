@@ -7,13 +7,15 @@ import { z } from 'zod';
 import { Button, Card, Input, Label } from '@heroui/react';
 import { buttonVariants } from '@heroui/styles';
 import { motion, AnimatePresence } from 'framer-motion';
-import { apiClient } from '../../api/client';
+import { apiClient, API_URL } from '../../api/client';
 import { getErrorMessage } from '../../api/errors';
 import { useAuth } from '../../auth/AuthContext';
 import AnimatedBackground from '../../components/layout/AnimatedBackground';
 import GlassCard from '../../components/shared/GlassCard';
 import { containerVariants, itemVariants, errorVariants } from '../../lib/motion-variants';
-
+import { startUserGoogleLogin,startUserGithubLogin } from '../../api/client';
+import { ArrowRight } from 'lucide-react';
+import {  useReducedMotion, type Variants } from 'framer-motion';
 /** Mirrors LoginDto (auth/dto/login.dto.ts): email + password required. */
 const credentialsSchema = z.object({
   email: z
@@ -44,13 +46,38 @@ interface LoginResponse {
   accessToken?: string;
   twoFactorRequired?: true;
 }
-
-const API_URL = import.meta.env.VITE_API_URL as string;
+function GoogleIcon() {
+  return (
+    <svg
+      className="h-5 w-5 shrink-0"
+      viewBox="0 0 48 48"
+      aria-hidden="true"
+      focusable="false"
+    >
+      <path
+        fill="#EA4335"
+        d="M24 9.5c3.5 0 6.6 1.2 9 3.6l6.7-6.7C35.6 2.6 30.2.5 24 .5 14.6.5 6.5 5.9 2.6 13.8l7.8 6.1C12.3 13.8 17.6 9.5 24 9.5z"
+      />
+      <path
+        fill="#4285F4"
+        d="M46.5 24.5c0-1.6-.1-2.8-.4-4.1H24v8.3h12.7c-.3 2.1-1.6 5.2-4.7 7.3l7.6 5.9c4.5-4.2 6.9-10.3 6.9-17.4z"
+      />
+      <path
+        fill="#FBBC05"
+        d="M10.4 28.1a14.6 14.6 0 0 1 0-9.3l-7.8-6.1a24 24 0 0 0 0 21.5l7.8-6.1z"
+      />
+      <path
+        fill="#34A853"
+        d="M24 47.5c6.2 0 11.4-2 15.2-5.6l-7.6-5.9c-2 1.4-4.7 2.4-7.6 2.4-6.4 0-11.7-4.3-13.6-10.3l-7.8 6.1C6.5 42.1 14.6 47.5 24 47.5z"
+      />
+    </svg>
+  );
+}
 
 function LoginPage() {
   const navigate = useNavigate();
   const { establishSession } = useAuth();
-
+  const reduceMotion = useReducedMotion();
   // Held only in memory, only for the duration of the 2FA step.
   const [pendingCredentials, setPendingCredentials] =
     useState<CredentialsValues | null>(null);
@@ -403,7 +430,7 @@ function LoginPage() {
             </motion.div>
 
             {/* Divider */}
-
+            
             <motion.div
               variants={itemVariants}
               className="flex w-full items-center gap-3"
@@ -417,43 +444,55 @@ function LoginPage() {
               <div className="h-px flex-1 bg-white/10" />
             </motion.div>
 
+            <motion.div variants={itemVariants} className="mt-8">
+              <motion.div
+                whileHover={reduceMotion ? undefined : { y: -2 }}
+                whileTap={reduceMotion ? undefined : { scale: 0.98 }}
+              >
+                <Button
+                  type="button"
+                  size="lg"
+                  onPress={() => startUserGoogleLogin()}
+                  className="flex min-h-12 w-full items-center justify-center gap-3 rounded-xl bg-gradient-to-b from-white to-slate-50 px-4 py-3 font-medium text-slate-900 shadow-sm transition-colors hover:from-slate-50 hover:to-slate-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-indigo-400"
+                >
+                  <GoogleIcon />
+                  <span>Continue with Google</span>
+                  <ArrowRight
+                    aria-hidden="true"
+                    className="h-4 w-4 shrink-0 text-slate-500"
+                  />
+                </Button>
+              </motion.div>
+            </motion.div>
+
             {/* Google */}
 
-            <motion.div
-              variants={itemVariants}
-              className="w-full"
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.98 }}
-            >
-              <a
-                href={`${API_URL}/auth/google`}
-                className={buttonVariants({
-                  variant: 'danger',
-                  fullWidth: true,
-                })}
-              >
-                Continue with Google
-              </a>
-            </motion.div>
-
+           
             {/* GitHub */}
 
-            <motion.div
-              variants={itemVariants}
-              className="w-full"
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.98 }}
-            >
-              <a
-                href={`${API_URL}/auth/github`}
-                className={buttonVariants({
-                  variant: 'danger',
-                  fullWidth: true,
-                })}
+             <motion.div variants={itemVariants} className="mt-4">
+              <motion.div
+                whileHover={reduceMotion ? undefined : { y: -2 }}
+                whileTap={reduceMotion ? undefined : { scale: 0.98 }}
               >
-                Continue with GitHub
-              </a>
+                <Button
+                  type="button"
+                  size="lg"
+                  onPress={() => startUserGithubLogin()}
+                  className="flex min-h-12 w-full items-center justify-center gap-3 rounded-xl bg-gradient-to-b from-white to-slate-50 px-4 py-3 font-medium text-slate-900 shadow-sm transition-colors hover:from-slate-50 hover:to-slate-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-indigo-400"
+                >
+                  <GoogleIcon />
+                  <span>Continue with Github</span>
+                  <ArrowRight
+                    aria-hidden="true"
+                    className="h-4 w-4 shrink-0 text-slate-500"
+                  />
+                </Button>
+              </motion.div>
             </motion.div>
+
+
+           
 
             {/* Register */}
 
