@@ -293,10 +293,10 @@ function ChangePasswordPage() {
               className="text-center text-sm text-slate-400"
             >
               <Link
-                to="/profile"
+                to="/home"
                 className="text-indigo-400 transition-colors hover:text-indigo-300 hover:underline"
               >
-                Back to profile
+                Back to home
               </Link>
             </motion.p>
           </Card.Footer>

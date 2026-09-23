@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import {  useNavigate } from 'react-router-dom';
 import { Button, Card } from '@heroui/react';
 import { motion, AnimatePresence, type Variants } from 'framer-motion';
 import { apiClient, refreshAccessToken } from '../../api/client';
@@ -11,8 +11,7 @@ import AnimatedBackground, {
 } from '../../components/layout/AnimatedBackground';
 import GlassCard from '../../components/shared/GlassCard';
 import { containerVariants, itemVariants, errorVariants } from '../../lib/motion-variants';
-import StatusLink from '../../components/shared/StatusLink';
-
+import BackLink from '../../components/shared/BackLink';
 /** Mirrors SafeSession from the backend's session.controller.ts. */
 interface SessionItem {
   id: string;
@@ -164,7 +163,7 @@ function SessionsPage() {
             </p>
           </div>
 
-          <StatusLink to="/home">Back to home</StatusLink>
+          <BackLink to="/home">Back to home</BackLink>
         </motion.div>
 
         {/* Main Card */}
