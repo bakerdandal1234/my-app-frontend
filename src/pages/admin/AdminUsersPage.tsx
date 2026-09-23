@@ -14,27 +14,18 @@ import {
   adminListItemVariants as itemVariants,
   adminListErrorVariants as errorVariants,
 } from '../../lib/motion-variants';
+import {
+  isAdminUserArray,
+  isRoleItemArray,
+  isUserAccess,
+  type AdminUser,
+  type RoleItem,
+  type UserAccess,
+} from '../../api/guards';
 
-interface AdminUser {
-  id: string;
-  email: string;
-  firstName?: string;
-  lastName?: string;
-  isEmailVerified: boolean;
-  createdAt: string;
-}
 
-interface RoleItem {
-  id: string;
-  name: string;
-  description?: string;
-}
 
-interface UserAccess {
-  userId: string;
-  roles: string[];
-  permissions: string[];
-}
+
 
 // containerVariants / itemVariants / errorVariants now come from the
 // shared ../../lib/motion-variants (this "admin list page" family is also
@@ -111,9 +102,16 @@ function AdminUsersPage() {
 
     try {
       const [usersRes, rolesRes] = await Promise.all([
-        apiClient.get<AdminUser[]>('/authorization/users'),
-        apiClient.get<RoleItem[]>('/authorization/roles'),
+        apiClient.get<unknown>('/authorization/users'),
+        apiClient.get<unknown>('/authorization/roles'),
       ]);
+      if (!isAdminUserArray(usersRes.data)) {
+        throw new Error('Unexpected users response');
+      }
+
+      if (!isRoleItemArray(rolesRes.data)) {
+        throw new Error('Unexpected roles response');
+      }
 
       setUsers(usersRes.data);
       setRoles(rolesRes.data);
@@ -126,17 +124,21 @@ function AdminUsersPage() {
     loadUsersAndRoles();
   }, []);
 
-  async function loadAccess(userId: string) {
+  async function loadAccess(userId: string): Promise<void> {
     setAccessError(null);
     setSelectedRoleId('');
 
     try {
-      const res = await apiClient.get<UserAccess>(
+      const res = await apiClient.get<unknown>(
         `/authorization/users/${userId}/access`,
       );
 
+      if (!isUserAccess(res.data)) {
+        throw new Error('Unexpected user access response');
+      }
+
       setAccess(res.data);
-    } catch (err) {
+    } catch (err: unknown) {
       setAccessError(getErrorMessage(err));
     }
   }
@@ -261,9 +263,8 @@ function AdminUsersPage() {
 
                 <p className="mt-1 text-sm text-slate-400">
                   {users
-                    ? `${users.length} user${
-                        users.length === 1 ? '' : 's'
-                      }`
+                    ? `${users.length} user${users.length === 1 ? '' : 's'
+                    }`
                     : 'Loading users…'}
                 </p>
               </div>
@@ -375,11 +376,10 @@ function AdminUsersPage() {
                             <div className="flex shrink-0 items-center gap-3">
                               {/* Verification */}
                               <span
-                                className={`hidden rounded-full border px-2.5 py-1 text-xs font-medium sm:inline-flex ${
-                                  user.isEmailVerified
-                                    ? 'border-emerald-400/20 bg-emerald-500/10 text-emerald-300'
-                                    : 'border-amber-400/20 bg-amber-500/10 text-amber-300'
-                                }`}
+                                className={`hidden rounded-full border px-2.5 py-1 text-xs font-medium sm:inline-flex ${user.isEmailVerified
+                                  ? 'border-emerald-400/20 bg-emerald-500/10 text-emerald-300'
+                                  : 'border-amber-400/20 bg-amber-500/10 text-amber-300'
+                                  }`}
                               >
                                 {user.isEmailVerified
                                   ? 'Verified'
@@ -393,11 +393,10 @@ function AdminUsersPage() {
                               </span>
 
                               <span
-                                className={`text-slate-500 transition-transform ${
-                                  isExpanded
-                                    ? 'rotate-180'
-                                    : ''
-                                }`}
+                                className={`text-slate-500 transition-transform ${isExpanded
+                                  ? 'rotate-180'
+                                  : ''
+                                  }`}
                               >
                                 ↓
                               </span>
@@ -614,7 +613,7 @@ function AdminUsersPage() {
                                         </div>
 
                                         {access.permissions.length ===
-                                        0 ? (
+                                          0 ? (
                                           <span className="text-xs text-slate-500">
                                             No permissions available.
                                           </span>

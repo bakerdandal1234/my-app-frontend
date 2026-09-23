@@ -13,7 +13,10 @@ import { useAuth } from '../../auth/AuthContext';
 import AnimatedBackground from '../../components/layout/AnimatedBackground';
 import GlassCard from '../../components/shared/GlassCard';
 import { containerVariants, itemVariants, errorVariants } from '../../lib/motion-variants';
-
+import {
+  isAccessTokenResponse,
+  isTwoFactorRequiredResponse,
+} from '../../api/guards';
 /** Mirrors LoginDto (auth/dto/login.dto.ts): email + password required. */
 const credentialsSchema = z.object({
   email: z
@@ -40,10 +43,7 @@ const twoFactorSchema = z.object({
 type TwoFactorValues = z.infer<typeof twoFactorSchema>;
 
 /** POST /auth/login returns either shape — see AuthService.login(). */
-interface LoginResponse {
-  accessToken?: string;
-  twoFactorRequired?: true;
-}
+
 
 const API_URL = import.meta.env.VITE_API_URL as string;
 
@@ -80,29 +80,25 @@ function LoginPage() {
     password: string,
     twoFactorCode?: string,
   ) {
-    const res = await apiClient.post<LoginResponse>('/auth/login', {
+    const response = await apiClient.post<unknown>('/auth/login', {
       email,
       password,
       ...(twoFactorCode ? { twoFactorCode } : {}),
     });
 
-    if (res.data.twoFactorRequired) {
-      setPendingCredentials({
-        email,
-        password,
-      });
-
+    if (isTwoFactorRequiredResponse(response.data)) {
+      setPendingCredentials({ email, password });
       return;
     }
 
-    if (!res.data.accessToken) {
-      throw new Error('The server did not return an access token.');
+    if (!isAccessTokenResponse(response.data)) {
+      throw new Error('Unexpected login response');
     }
 
-    await establishSession(res.data.accessToken);
-
+    await establishSession(response.data.accessToken);
     navigate('/home');
   }
+
 
   async function onSubmitCredentials(values: CredentialsValues) {
     setApiError(null);

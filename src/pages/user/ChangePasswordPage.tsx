@@ -60,7 +60,7 @@ function ChangePasswordPage() {
     setApiError(null);
 
     try {
-      await apiClient.post<{ message?: string }>(
+      await apiClient.post<unknown>(
         '/auth/change-password',
         {
           currentPassword: values.currentPassword,

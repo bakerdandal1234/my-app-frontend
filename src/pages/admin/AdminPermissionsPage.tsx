@@ -17,13 +17,12 @@ import {
   adminListItemVariants as itemVariants,
   adminListErrorVariants as errorVariants,
 } from '../../lib/motion-variants';
+import {
+  isPermissionItemArray,
+  type PermissionItem,
+} from '../../api/guards';
 
-interface PermissionItem {
-  id: string;
-  resource: string;
-  action: string;
-  description?: string;
-}
+
 
 /** Mirrors CreatePermissionDto/UpdatePermissionDto. */
 const permissionSchema = z.object({
@@ -100,19 +99,23 @@ function AdminPermissionsPage() {
     },
   });
 
-  async function loadPermissions() {
-    setError(null);
+  async function loadPermissions(): Promise<void> {
+  setError(null);
 
-    try {
-      const res = await apiClient.get<PermissionItem[]>(
-        '/authorization/permissions',
-      );
+  try {
+    const res = await apiClient.get<unknown>(
+      '/authorization/permissions',
+    );
 
-      setPermissions(res.data);
-    } catch (err) {
-      setError(getErrorMessage(err));
+    if (!isPermissionItemArray(res.data)) {
+      throw new Error('Unexpected permissions response');
     }
+
+    setPermissions(res.data);
+  } catch (err: unknown) {
+    setError(getErrorMessage(err));
   }
+}
 
   useEffect(() => {
     loadPermissions();

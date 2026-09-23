@@ -16,7 +16,7 @@ import {
   statusItemVariants as itemVariants,
   statusIconVariants as iconVariants,
 } from '../../lib/motion-variants';
-
+import { isMessageResponse } from '../../api/guards';
 type Status = 'loading' | 'success' | 'error';
 
 // containerVariants / itemVariants / iconVariants now come from the shared
@@ -85,18 +85,22 @@ function VerifyEmailPage() {
 
     (async () => {
       try {
-        const res = await apiClient.get<{ message?: string }>(
+        const res = await apiClient.get<unknown>(
           '/auth/verify-email',
-          {
-            params: { token },
-          },
+          { params: { token } },
         );
 
         if (cancelled) return;
 
+        if (!isMessageResponse(res.data)) {
+          throw new Error('Unexpected email verification response');
+        }
+
         setStatus('success');
-        setMessage(res.data?.message ?? 'Your email has been verified.');
-      } catch (err) {
+        setMessage(
+          res.data.message ?? 'Your email has been verified.',
+        );
+      } catch (err: unknown) {
         if (cancelled) return;
 
         setStatus('error');

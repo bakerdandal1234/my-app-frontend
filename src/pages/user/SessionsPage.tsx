@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import {  useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { Button, Card } from '@heroui/react';
 import { motion, AnimatePresence, type Variants } from 'framer-motion';
 import { apiClient, refreshAccessToken } from '../../api/client';
@@ -12,21 +12,17 @@ import AnimatedBackground, {
 import GlassCard from '../../components/shared/GlassCard';
 import { containerVariants, itemVariants, errorVariants } from '../../lib/motion-variants';
 import BackLink from '../../components/shared/BackLink';
+import {
+  isSessionItemArray,
+  type SessionItem,
+} from '../../api/guards';
 /** Mirrors SafeSession from the backend's session.controller.ts. */
-interface SessionItem {
-  id: string;
-  userAgent?: string;
-  ipAddress?: string;
-  createdAt: string;
-  lastUsedAt?: string;
-  expiresAt: string;
-  revokedAt?: string;
-}
 
-function formatDate(value?: string): string {
+
+
+function formatDate(value?: string | null): string {
   return value ? new Date(value).toLocaleString() : '—';
 }
-
 // --- Motion Variants ---
 // containerVariants / itemVariants / errorVariants now come from the
 // shared ../../lib/motion-variants (consolidated from a near-identical
@@ -81,13 +77,18 @@ function SessionsPage() {
     useState<string | null>(null);
   const [revokingAll, setRevokingAll] = useState(false);
 
-  async function loadSessions() {
+  async function loadSessions(): Promise<void> {
     setError(null);
 
     try {
-      const res = await apiClient.get<SessionItem[]>('/sessions');
+      const res = await apiClient.get<unknown>('/sessions');
+
+      if (!isSessionItemArray(res.data)) {
+        throw new Error('Unexpected sessions response');
+      }
+
       setSessions(res.data);
-    } catch (err) {
+    } catch (err: unknown) {
       setError(getErrorMessage(err));
     }
   }
@@ -258,33 +259,30 @@ function SessionsPage() {
                         whileHover={
                           !isRevoked
                             ? {
-                                y: -2,
-                              }
+                              y: -2,
+                            }
                             : undefined
                         }
-                        className={`rounded-xl border p-4 transition-colors ${
-                          isRevoked
+                        className={`rounded-xl border p-4 transition-colors ${isRevoked
                             ? 'border-white/5 bg-black/10 opacity-70'
                             : 'border-white/10 bg-white/5 hover:border-indigo-500/20 hover:bg-white/[0.07]'
-                        }`}
+                          }`}
                       >
                         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                           {/* Session information */}
                           <div className="min-w-0 flex-1">
                             <div className="flex items-center gap-3">
                               <div
-                                className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${
-                                  isRevoked
+                                className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${isRevoked
                                     ? 'bg-slate-500/10'
                                     : 'bg-indigo-500/10'
-                                }`}
+                                  }`}
                               >
                                 <span
-                                  className={`text-lg ${
-                                    isRevoked
+                                  className={`text-lg ${isRevoked
                                       ? 'text-slate-500'
                                       : 'text-indigo-400'
-                                  }`}
+                                    }`}
                                 >
                                   {isRevoked ? '×' : '●'}
                                 </span>
@@ -395,23 +393,23 @@ function SessionsPage() {
                 {sessions.some(
                   (session) => !session.revokedAt,
                 ) && (
-                  <motion.div
-                    variants={itemVariants}
-                    className="w-full"
-                  >
-                    <Button
-                      type="button"
-                      variant="danger"
-                      fullWidth
-                      isPending={revokingAll}
-                      onPress={handleRevokeAll}
+                    <motion.div
+                      variants={itemVariants}
+                      className="w-full"
                     >
-                      {revokingAll
-                        ? 'Revoking all…'
-                        : 'Revoke all sessions (log out everywhere)'}
-                    </Button>
-                  </motion.div>
-                )}
+                      <Button
+                        type="button"
+                        variant="danger"
+                        fullWidth
+                        isPending={revokingAll}
+                        onPress={handleRevokeAll}
+                      >
+                        {revokingAll
+                          ? 'Revoking all…'
+                          : 'Revoke all sessions (log out everywhere)'}
+                      </Button>
+                    </motion.div>
+                  )}
               </Card.Footer>
             )}
           </GlassCard>

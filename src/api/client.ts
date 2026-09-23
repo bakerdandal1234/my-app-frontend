@@ -1,7 +1,7 @@
-import axios, { type AxiosError, type InternalAxiosRequestConfig } from 'axios';
+import axios, { type InternalAxiosRequestConfig } from 'axios';
 import { getAccessToken, setAccessToken } from './tokenStore';
 import { getCsrfToken } from './csrf';
-
+import { isAccessTokenResponse } from './guards';
 declare module 'axios' {
   export interface AxiosRequestConfig {
     /** Internal: set once a request has already been retried after a 401 refresh, to prevent retry loops. */
@@ -45,7 +45,8 @@ let refreshPromise: Promise<string> | null = null;
 export async function refreshAccessToken(): Promise<string> {
   refreshPromise ??= (async () => {
     const csrfToken = getCsrfToken();
-    const response = await apiClient.post<{ accessToken: string }>(
+
+    const response = await apiClient.post<unknown>(
       '/auth/refresh',
       {},
       {
@@ -53,6 +54,11 @@ export async function refreshAccessToken(): Promise<string> {
         headers: csrfToken ? { 'X-CSRF-Token': csrfToken } : {},
       },
     );
+
+    if (!isAccessTokenResponse(response.data)) {
+      throw new Error('Unexpected refresh response');
+    }
+
     setAccessToken(response.data.accessToken);
     return response.data.accessToken;
   })().finally(() => {
@@ -61,7 +67,6 @@ export async function refreshAccessToken(): Promise<string> {
 
   return refreshPromise;
 }
-
 // On a 401 from a request that WAS carrying an access token: try exactly
 // one silent refresh + one retry. A 401 from a request with no
 // Authorization header (e.g. /auth/login with wrong credentials,
@@ -74,16 +79,29 @@ export async function refreshAccessToken(): Promise<string> {
 // will react by treating the user as logged out.
 apiClient.interceptors.response.use(
   (response) => response,
-  async (error: AxiosError) => {
+  async (error: unknown) => {
+    // قد يأتي الخطأ من كود التطبيق أو interceptor آخر.
+    // لا نقرأ config أو response قبل التأكد من أنه خطأ Axios.
+    if (!axios.isAxiosError<unknown, unknown>(error)) {
+      return Promise.reject(error);
+    }
+
     const config = error.config;
     const isUnauthorized = error.response?.status === 401;
-    const hadAccessToken = !!config?.headers?.get?.('Authorization');
-    const canRetry = !!config && hadAccessToken && !config._isRefreshCall && !config._retry;
+    const hadAccessToken =
+      !!config?.headers?.get?.('Authorization');
 
-    if (!isUnauthorized || !canRetry) {
+    if (
+      !isUnauthorized ||
+      !config ||
+      !hadAccessToken ||
+      config._isRefreshCall ||
+      config._retry
+    ) {
       if (isUnauthorized && hadAccessToken) {
         setAccessToken(null);
       }
+
       return Promise.reject(error);
     }
 
@@ -91,9 +109,14 @@ apiClient.interceptors.response.use(
 
     try {
       const newToken = await refreshAccessToken();
-      config.headers.set('Authorization', `Bearer ${newToken}`);
-      return apiClient(config);
-    } catch (refreshError) {
+
+      config.headers.set(
+        'Authorization',
+        `Bearer ${newToken}`,
+      );
+
+      return apiClient<unknown>(config);
+    } catch (refreshError: unknown) {
       setAccessToken(null);
       return Promise.reject(refreshError);
     }

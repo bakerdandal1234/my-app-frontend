@@ -17,25 +17,14 @@ import {
   adminListItemVariants as itemVariants,
   adminListErrorVariants as errorVariants,
 } from '../../lib/motion-variants';
+import {
+  isRoleItemArray,
+  isPermissionItemArray,
+  type RoleItem,
+  type PermissionItem,
+} from '../../api/guards';
 
-interface PermissionItem {
-  id: string;
-  resource: string;
-  action: string;
-  description?: string;
-}
 
-interface RolePermissionItem {
-  permissionId: string;
-  permission: PermissionItem;
-}
-
-interface RoleItem {
-  id: string;
-  name: string;
-  description?: string;
-  rolePermissions: RolePermissionItem[];
-}
 
 /** Mirrors CreateRoleDto/UpdateRoleDto — name is lowercased/trimmed server-side. */
 const roleSchema = z.object({
@@ -135,18 +124,26 @@ function AdminRolesPage() {
     },
   });
 
-  async function loadRolesAndPermissions() {
+  async function loadRolesAndPermissions(): Promise<void> {
     setError(null);
 
     try {
       const [rolesRes, permissionsRes] = await Promise.all([
-        apiClient.get<RoleItem[]>('/authorization/roles'),
-        apiClient.get<PermissionItem[]>('/authorization/permissions'),
+        apiClient.get<unknown>('/authorization/roles'),
+        apiClient.get<unknown>('/authorization/permissions'),
       ]);
+
+      if (!isRoleItemArray(rolesRes.data)) {
+        throw new Error('Unexpected roles response');
+      }
+
+      if (!isPermissionItemArray(permissionsRes.data)) {
+        throw new Error('Unexpected permissions response');
+      }
 
       setRoles(rolesRes.data);
       setPermissions(permissionsRes.data);
-    } catch (err) {
+    } catch (err: unknown) {
       setError(getErrorMessage(err));
     }
   }
@@ -259,10 +256,9 @@ function AdminRolesPage() {
       await loadRolesAndPermissions();
 
       showToast(
-        `Assigned "${
-          permission
-            ? permissionLabel(permission)
-            : 'permission'
+        `Assigned "${permission
+          ? permissionLabel(permission)
+          : 'permission'
         }"`,
       );
     } catch (err) {
@@ -754,10 +750,10 @@ function AdminRolesPage() {
                                 <div className="flex flex-wrap gap-2">
                                   {role.rolePermissions.length ===
                                     0 && (
-                                    <span className="rounded-lg border border-dashed border-white/10 bg-white/5 px-3 py-2 text-xs text-slate-500">
-                                      No permissions assigned.
-                                    </span>
-                                  )}
+                                      <span className="rounded-lg border border-dashed border-white/10 bg-white/5 px-3 py-2 text-xs text-slate-500">
+                                        No permissions assigned.
+                                      </span>
+                                    )}
 
                                   {role.rolePermissions.map(
                                     (rolePermission) => {
@@ -807,69 +803,69 @@ function AdminRolesPage() {
                                 {/* Assign permission */}
                                 {assignablePermissions.length >
                                   0 && (
-                                  <div className="mt-5 rounded-xl border border-white/10 bg-white/5 p-3">
-                                    <div className="mb-3">
-                                      <p className="text-xs font-medium text-slate-300">
-                                        Add permission
-                                      </p>
+                                    <div className="mt-5 rounded-xl border border-white/10 bg-white/5 p-3">
+                                      <div className="mb-3">
+                                        <p className="text-xs font-medium text-slate-300">
+                                          Add permission
+                                        </p>
 
-                                      <p className="mt-1 text-xs text-slate-500">
-                                        Select a permission that is
-                                        not already assigned.
-                                      </p>
+                                        <p className="mt-1 text-xs text-slate-500">
+                                          Select a permission that is
+                                          not already assigned.
+                                        </p>
+                                      </div>
+
+                                      <div className="flex flex-col gap-2 sm:flex-row">
+                                        <select
+                                          value={
+                                            selectedPermissionId
+                                          }
+                                          onChange={(event) =>
+                                            setSelectedPermissionId(
+                                              event.target.value,
+                                            )
+                                          }
+                                          className="min-h-10 flex-1 rounded-lg border border-white/10 bg-slate-900 px-3 text-sm text-slate-200 outline-none transition focus:border-indigo-400/50 focus:ring-2 focus:ring-indigo-500/20"
+                                        >
+                                          <option value="">
+                                            Add a permission…
+                                          </option>
+
+                                          {assignablePermissions.map(
+                                            (permission) => (
+                                              <option
+                                                key={permission.id}
+                                                value={permission.id}
+                                              >
+                                                {permissionLabel(
+                                                  permission,
+                                                )}
+                                              </option>
+                                            ),
+                                          )}
+                                        </select>
+
+                                        <Button
+                                          type="button"
+                                          variant="primary"
+                                          onPress={() =>
+                                            handleAssignPermission(
+                                              role.id,
+                                            )
+                                          }
+                                          isDisabled={
+                                            !selectedPermissionId ||
+                                            isMutating
+                                          }
+                                          className="bg-indigo-600 text-white hover:bg-indigo-500"
+                                        >
+                                          {isMutating
+                                            ? 'Assigning…'
+                                            : 'Assign'}
+                                        </Button>
+                                      </div>
                                     </div>
-
-                                    <div className="flex flex-col gap-2 sm:flex-row">
-                                      <select
-                                        value={
-                                          selectedPermissionId
-                                        }
-                                        onChange={(event) =>
-                                          setSelectedPermissionId(
-                                            event.target.value,
-                                          )
-                                        }
-                                        className="min-h-10 flex-1 rounded-lg border border-white/10 bg-slate-900 px-3 text-sm text-slate-200 outline-none transition focus:border-indigo-400/50 focus:ring-2 focus:ring-indigo-500/20"
-                                      >
-                                        <option value="">
-                                          Add a permission…
-                                        </option>
-
-                                        {assignablePermissions.map(
-                                          (permission) => (
-                                            <option
-                                              key={permission.id}
-                                              value={permission.id}
-                                            >
-                                              {permissionLabel(
-                                                permission,
-                                              )}
-                                            </option>
-                                          ),
-                                        )}
-                                      </select>
-
-                                      <Button
-                                        type="button"
-                                        variant="primary"
-                                        onPress={() =>
-                                          handleAssignPermission(
-                                            role.id,
-                                          )
-                                        }
-                                        isDisabled={
-                                          !selectedPermissionId ||
-                                          isMutating
-                                        }
-                                        className="bg-indigo-600 text-white hover:bg-indigo-500"
-                                      >
-                                        {isMutating
-                                          ? 'Assigning…'
-                                          : 'Assign'}
-                                      </Button>
-                                    </div>
-                                  </div>
-                                )}
+                                  )}
 
                                 {assignablePermissions.length ===
                                   0 &&

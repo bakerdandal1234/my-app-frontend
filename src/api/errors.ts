@@ -1,3 +1,5 @@
+
+
 import { isAxiosError } from 'axios';
 
 interface BackendErrorBody {
@@ -5,42 +7,50 @@ interface BackendErrorBody {
 }
 
 /**
- * Runtime type guard for the backend's error body — axios types
- * `response.data` as `any` internally, so we validate the shape before
- * trusting it instead of blindly asserting it (see CLAUDE.md rule 3: don't
- * blindly trust API responses). The one cast inside is safe: it only
- * narrows `unknown` to a plain object so we can *check* a property exists
- * and has the right type — it never assumes the property's value is
- * correct without verifying it first.
+ * جسم استجابة الخطأ بيانات خارجية أيضًا.
+ * نفحصه دون تحويل نوعه باستخدام as أو افتراض وجود response.
  */
-function isBackendErrorBody(data: unknown): data is BackendErrorBody {
-  if (typeof data !== 'object' || data === null) {
+function isBackendErrorBody(
+  data: unknown,
+): data is BackendErrorBody {
+  if (
+    typeof data !== 'object' ||
+    data === null ||
+    Array.isArray(data)
+  ) {
     return false;
   }
-  const message = (data as Record<string, unknown>).message;
+
+  if (!('message' in data)) {
+    return true;
+  }
+
   return (
-    message === undefined ||
-    typeof message === 'string' ||
-    (Array.isArray(message) && message.every((item) => typeof item === 'string'))
+    data.message === undefined ||
+    typeof data.message === 'string' ||
+    (
+      Array.isArray(data.message) &&
+      data.message.every(
+        (item: unknown) => typeof item === 'string',
+      )
+    )
   );
 }
 
-/**
- * The backend's global HttpExceptionFilter returns { message, statusCode,
- * path, timestamp }, where `message` is either a plain string (most
- * handwritten exceptions) or a string[] (class-validator's ValidationPipe
- * errors, one entry per failed rule). This normalizes both into one string
- * for display.
- */
 export function getErrorMessage(error: unknown): string {
-  if (isAxiosError(error) && isBackendErrorBody(error.response?.data)) {
-    const { message } = error.response!.data;
-    if (Array.isArray(message)) {
-      return message.join(' ');
-    }
-    if (typeof message === 'string') {
-      return message;
+  if (isAxiosError<unknown, unknown>(error)) {
+    const data = error.response?.data;
+
+    if (isBackendErrorBody(data)) {
+      if (typeof data.message === 'string') {
+        return data.message;
+      }
+
+      if (Array.isArray(data.message)) {
+        return data.message.join(' ');
+      }
     }
   }
+
   return 'Something went wrong. Please try again.';
 }

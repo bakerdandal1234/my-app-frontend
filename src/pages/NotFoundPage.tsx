@@ -1,4 +1,3 @@
-import { Link } from 'react-router-dom';
 import { motion, type Variants } from 'framer-motion';
 import { Card } from '@heroui/react';
 import AnimatedBackground, {

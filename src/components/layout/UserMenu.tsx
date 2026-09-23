@@ -2,10 +2,13 @@ import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Button } from '@heroui/react';
 import { AnimatePresence, motion } from 'framer-motion';
+
+
+
 export interface HeaderUser {
   email?: string;
-  firstName?: string;
-  lastName?: string;
+  firstName?: string | null;
+  lastName?: string | null;
 }
 
 interface UserMenuProps {
@@ -35,8 +38,8 @@ export default function UserMenu({
     'User';
 
   const initial = displayName.charAt(0).toUpperCase();
-console.log(user)
-  
+  console.log(user)
+
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       if (
@@ -131,14 +134,14 @@ console.log(user)
                 Security
               </Link>
 
-                <Link
-                  to={changePasswordHref}
-                  onClick={() => setIsOpen(false)}
-                  className="flex items-center rounded-xl px-3 py-2.5 text-sm text-slate-200 transition-colors hover:bg-white/10 hover:text-white"
-                  role="menuitem"
-                >
-                  change password
-                </Link>
+              <Link
+                to={changePasswordHref}
+                onClick={() => setIsOpen(false)}
+                className="flex items-center rounded-xl px-3 py-2.5 text-sm text-slate-200 transition-colors hover:bg-white/10 hover:text-white"
+                role="menuitem"
+              >
+                change password
+              </Link>
 
 
             </div>

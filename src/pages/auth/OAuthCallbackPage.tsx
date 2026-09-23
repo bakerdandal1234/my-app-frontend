@@ -17,7 +17,7 @@ import {
   statusContainerVariants as containerVariants,
   statusItemVariants as itemVariants,
 } from '../../lib/motion-variants';
-
+import { isAccessTokenResponse } from '../../api/guards';
 // containerVariants / itemVariants now come from the shared
 // ../../lib/motion-variants (this "status page" family is also used by
 // VerifyEmailPage and CustomerOAuthCallbackPage). The matching
@@ -83,15 +83,15 @@ function OAuthCallbackPage() {
 
     (async () => {
       try {
-        const res = await apiClient.post<{ accessToken: string }>(
+        const res = await apiClient.post<unknown>(
           '/auth/oauth/exchange',
-          {
-            code,
-          },
+          { code },
         );
 
         if (cancelled) return;
-
+        if (!isAccessTokenResponse(res.data)) {
+          throw new Error('Unexpected OAuth response');
+        }
         await establishSession(res.data.accessToken);
         navigate('/home');
       } catch (err) {
@@ -115,9 +115,14 @@ function OAuthCallbackPage() {
     setIsSubmitting(true);
     setError(null);
     try {
-      const response = await apiClient.post<{ accessToken: string }>(
-        '/auth/2fa/verify', { code: twoFactorCode }, { _retry: true },
+      const response = await apiClient.post<unknown>(
+        '/auth/2fa/verify',
+        { code: twoFactorCode },
+        { _retry: true },
       );
+      if (!isAccessTokenResponse(response.data)) {
+        throw new Error('Unexpected two-factor response');
+      }
       await establishSession(response.data.accessToken);
       navigate('/home', { replace: true });
     } catch (err) {

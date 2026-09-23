@@ -13,7 +13,10 @@ import AnimatedBackground, {
 } from '../../components/layout/AnimatedBackground';
 import GlassCard from '../../components/shared/GlassCard';
 import { containerVariants, itemVariants, errorVariants } from '../../lib/motion-variants';
-
+import {
+  isTwoFactorSetupResponse,
+  type TwoFactorSetupResponse,
+} from '../../api/guards'
 /** Mirrors Verify2faDto (auth/dto/verify-2fa.dto.ts): @Length(6, 6). */
 const codeSchema = z.object({
   code: z
@@ -24,10 +27,7 @@ const codeSchema = z.object({
 
 type CodeValues = z.infer<typeof codeSchema>;
 
-interface GenerateResponse {
-  qrCodeDataUrl: string;
-  secret: string;
-}
+
 
 // --- Motion Variants ---
 // containerVariants / itemVariants / errorVariants now come from the
@@ -77,9 +77,9 @@ const TWO_FACTOR_BACKGROUND_BLOBS: AnimatedBackgroundBlob[] = [
 function TwoFactorSetupPage() {
   const { user, setUser } = useAuth();
 
-  const [setupData, setSetupData] =
-    useState<GenerateResponse | null>(null);
 
+  const [setupData, setSetupData] =
+    useState<TwoFactorSetupResponse | null>(null);
   const [showDisableForm, setShowDisableForm] = useState(false);
   const [apiError, setApiError] = useState<string | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
@@ -100,18 +100,25 @@ function TwoFactorSetupPage() {
     },
   });
 
-  async function startEnableFlow() {
+  async function startEnableFlow(): Promise<void> {
     setApiError(null);
     setSuccessMessage(null);
     setIsGenerating(true);
 
+    // إنشاء إعداد جديد قد يبطل السر السابق؛ لا نعرض بياناته القديمة.
+    setSetupData(null);
+
     try {
-      const res = await apiClient.post<GenerateResponse>(
+      const res = await apiClient.post<unknown>(
         '/auth/2fa/generate',
       );
 
+      if (!isTwoFactorSetupResponse(res.data)) {
+        throw new Error('Unexpected two-factor setup response');
+      }
+
       setSetupData(res.data);
-    } catch (err) {
+    } catch (err: unknown) {
       setApiError(getErrorMessage(err));
     } finally {
       setIsGenerating(false);

@@ -8,7 +8,11 @@ import {
 import { useNavigate } from 'react-router-dom';
 import { apiClient, refreshAccessToken } from '../api/client';
 import { getAccessToken, setAccessToken, subscribeToAccessToken } from '../api/tokenStore';
-
+import {
+  isAuthUser,
+  isUserAccess,
+  type AuthUser,
+} from '../api/guards';
 /**
  * Widened as pages need more fields from GET /users/me. Now covers the
  * full set of non-excluded fields on the User entity (see backend
@@ -16,17 +20,7 @@ import { getAccessToken, setAccessToken, subscribeToAccessToken } from '../api/t
  * the 2FA page (Phase 8) — everything @Exclude()'d there (password,
  * tokens, lockout counters) never reaches this type in the first place.
  */
-export interface AuthUser {
-  id: string;
-  email: string;
-  firstName?: string;
-  lastName?: string;
-  isEmailVerified: boolean;
-  isTwoFactorEnabled: boolean;
-  googleId?: string;
-  githubId?: string;
-  createdAt: string;
-}
+export type { AuthUser } from '../api/guards';
 
 /** Mirrors GET /users/me/access's response shape. */
 interface AccessInfo {
@@ -86,14 +80,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   async function loadAccess(): Promise<void> {
     try {
-      const res = await apiClient.get<{ userId: string; roles: string[]; permissions: string[] }>(
-        '/users/me/access',
-      );
-      setAccess({ roles: res.data.roles, permissions: res.data.permissions });
+      const response = await apiClient.get<unknown>('/users/me/access');
+
+      if (!isUserAccess(response.data)) {
+        throw new Error('Unexpected access response');
+      }
+
+      setAccess({
+        roles: response.data.roles,
+        permissions: response.data.permissions,
+      });
     } catch {
-      // Non-fatal — the user is still logged in, they just render as
-      // having no roles/permissions until this succeeds (e.g. on a later
-      // page load). RequirePermission simply hides gated UI in that case.
       setAccess(EMPTY_ACCESS);
     }
   }
@@ -110,15 +107,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       try {
         await refreshAccessToken();
         if (cancelled) return;
-        const me = await apiClient.get<AuthUser>('/users/me');
+        const me = await apiClient.get<unknown>('/users/me');
         if (cancelled) return;
+        if (!isAuthUser(me.data)) {
+          throw new Error('Unexpected user response');
+        }
         setUser(me.data);
         await loadAccess();
       } catch {
-        // No valid session cookie (or it's expired/revoked). Expected for
-        // a logged-out visitor — not an error to surface.
+        if (!cancelled) {
+          setAccessToken(null);
+          setUser(null);
+          setAccess(EMPTY_ACCESS);
+        }
       } finally {
-        if (!cancelled) setIsLoading(false);
+         if (!cancelled) {
+        setIsLoading(false);
+      }
       }
     })();
 
@@ -129,9 +134,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   async function establishSession(newAccessToken: string): Promise<void> {
     setAccessToken(newAccessToken);
-    const me = await apiClient.get<AuthUser>('/users/me');
-    setUser(me.data);
-    await loadAccess();
+
+    try {
+      const me = await apiClient.get<unknown>('/users/me');
+
+      if (!isAuthUser(me.data)) {
+        throw new Error('Unexpected user response');
+      }
+
+      setUser(me.data);
+      await loadAccess();
+    } catch (error: unknown) {
+      // لا نحتفظ بجلسة محلية غير مكتملة عند فشل تحميل المستخدم.
+      setAccessToken(null);
+      setUser(null);
+      setAccess(EMPTY_ACCESS);
+      throw error;
+    }
   }
 
   async function logout(): Promise<void> {
