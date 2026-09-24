@@ -168,7 +168,7 @@ function AdminPermissionsPage() {
         {
           resource: values.resource,
           action: values.action,
-          description: values.description || undefined,
+          description: values.description || "",
         },
       );
 
@@ -360,7 +360,7 @@ function AdminPermissionsPage() {
                           <Input
                             placeholder="e.g. roles"
                             {...createForm.register('resource')}
-                            className="text-white"
+                            className="text-black"
                           />
 
                           {createForm.formState.errors.resource && (
@@ -382,7 +382,7 @@ function AdminPermissionsPage() {
                           <Input
                             placeholder="e.g. read"
                             {...createForm.register('action')}
-                            className="text-white"
+                            className="text-black"
                           />
 
                           {createForm.formState.errors.action && (
@@ -404,7 +404,7 @@ function AdminPermissionsPage() {
                           <Input
                             placeholder="Optional description"
                             {...createForm.register('description')}
-                            className="text-white"
+                            className="text-black"
                           />
 
                           {createForm.formState.errors.description && (
@@ -511,7 +511,7 @@ function AdminPermissionsPage() {
 
                                 <Input
                                   {...editForm.register('resource')}
-                                  className="text-white"
+                                  className="text-black"
                                 />
 
                                 {editForm.formState.errors.resource && (
@@ -532,7 +532,7 @@ function AdminPermissionsPage() {
 
                                 <Input
                                   {...editForm.register('action')}
-                                  className="text-white"
+                                  className="text-black"
                                 />
 
                                 {editForm.formState.errors.action && (
@@ -553,7 +553,7 @@ function AdminPermissionsPage() {
 
                                 <Input
                                   {...editForm.register('description')}
-                                  className="text-white"
+                                  className="text-black"
                                 />
                               </div>
                             </div>

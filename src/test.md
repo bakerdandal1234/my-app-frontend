@@ -1,10 +1,123 @@
+Now the remaining components, landing/404 pages, and config files.The path is reachable now. `clean-code-guard` also turned out to be in your project (`.claude/skills/clean-code-guard`), so I followed its review mode and checklist over all of `src/` plus the config files. Nothing was modified. The file reader gives no line numbers, so findings cite the file plus the function or quoted code. Items that would change behavior are marked "confirm with author".
+
+# Code review: my-app-frontend (`src/` + config)
+
+## Summary
+Needs work. The auth and HTTP core is careful and well reasoned. The debt is in the pages: heavy copy-paste, several oversized components, leftovers from a removed "customer" feature, debug logging, and a few real bugs.
+Counts: 2 critical, 12 important, 3 nits
+
+## Critical findings
+- `src/pages/NotFoundPage.tsx` — correctness: `to={user?.email ? '/home' : '/customer/account'}`. `App.tsx` has no `/customer/account` route, so a logged-out visitor clicking "Back to home" lands on the 404 page again. Fix: use `'/'` for logged-out users.
+- `src/pages/auth/RegisterPage.tsx` — correctness: `.max(100, ...).min(3, 'First name is required.')` (same for `lastName`). `min(3)` rejects real 2-letter names (Li, Wu, Al), and the message says "required" when the rule is length. It also makes `...(values.firstName ? { firstName } : {})` always true, although `AuthUser` treats both names as optional. Fix: `.trim().min(1, ...)` if required, or `.optional()`, after checking `CreateUserDto`, and drop the dead conditional spread.
+
+## Important findings
+- **I1** `RegisterPage`, `ResetPasswordPage`, `ChangePasswordPage` and others — DRY (duplicated knowledge):
+  - `PASSWORD_RULE`, `PASSWORD_MESSAGE` and the `.min(8).max(128).regex()` chain are copied three times.
+  - The 6-digit code rule is in `LoginPage` (`twoFactorSchema`), `SecurityPage` (`codeSchema`) and `OAuthCallbackPage` (`/^\d{6}$/.test`).
+  - `resource:action` formatting is `permissionLabel()` in `AdminRolesPage` but inlined about 5 times in `AdminPermissionsPage`.
+  - `'roles:read'` and `'permissions:read'` repeat in `App.tsx`, `AuthenticatedLayout` and `AdminRolesPage`.
+  - `showToast(\`Role "${values.name.toLowerCase().trim()}" created\`)` re-implements the server's normalization.
+  
+  Fix: add `lib/validation.ts` (`passwordSchema`, `twoFactorCodeSchema`), `auth/permissions.ts` (constants plus `formatPermission`) and a `ROUTES` map. Drop the client-side normalization in the toast.
+- **I2** `api/client.ts` and `LoginPage.tsx` — boundary: `const API_URL = import.meta.env.VITE_API_URL as string;` appears twice.
+  - The `as string` cast contradicts AGENTS.md, and nothing checks the variable exists, so a missing value silently gives `baseURL: undefined`. `vite-env.d.ts` declares no `ImportMetaEnv`.
+  - The sequence "GET → `isX(res.data)` → `throw new Error('Unexpected … response')`" appears about a dozen times, with endpoint strings inline in components.
+  
+  Fix: add `api/config.ts` exporting a validated `API_URL` that throws at startup if unset, and type `ImportMetaEnv`. Add a `getValidated(url, guard)` helper or per-domain modules.
+- **I3** UI shell duplication — DRY (helpers exist but are bypassed):
+  - The page shell (`relative flex min-h-screen items-center justify-center overflow-hidden bg-slate-950 px-4` plus `<AnimatedBackground />`) is copied more than a dozen times.
+  - The animated error banner and the Label + Input + error field block are repeated dozens of times.
+  - Nine pages define their own `*_BACKGROUND_BLOBS`, differing by a few pixels, although `AnimatedBackground` already has defaults.
+  - There are three spinners: `ui/Spinner`, HeroUI's `Spinner` in `VerifyEmailPage`, and inline `animate-spin` divs in Sessions, AdminUsers, AdminRoles and AdminPermissions.
+  - `LandingPage` defines its own local `AnimatedBackground` (same name as the shared one, same numbers as `HOME_BACKGROUND_BLOBS`) and local `containerVariants`/`itemVariants`.
+  
+  Fix: extract `AuthPageShell`, `FormField` and `FormErrorBanner`, give `AnimatedBackground` two presets, reuse `ui/Spinner`, and delete Landing's local copies.
+- **I4** `LoginPage`, `SecurityPage`, `SessionsPage`, `AdminUsersPage`, `AdminRolesPage` — KISS/SRP:
+  - Each is one large component. `AdminUsersPage` and `AdminRolesPage` run to hundreds of lines with 8–12 levels of JSX nesting, each owning loading, forms and mutations.
+  - The `{/* Header */}`, `{/* Email */}` and `{/* Loading */}` banners mark components that don't exist yet.
+  - `AdminUsersPage` also hand-rolls race protection with four refs (`selectionRef`, `accessRequestIdRef`, `mutationPendingRef`, `mountedRef`) mirrored by state, plus an `AccessSelection` wrapper that exists only for object identity.
+  
+  Fix: split into `LoginCredentialsForm`/`TwoFactorStep`, `RoleRow`/`CreateRoleForm`/`RolePermissionsPanel` and `UserRow`/`UserAccessPanel`. Move access loading into a `useUserAccess(userId)` hook that uses axios `signal`, which removes the ref bookkeeping.
+- **I5** `OAuthCallbackPage`, `VerifyEmailPage` — correctness: one-shot requests sit in a `useEffect` with a `cancelled` flag, and `main.tsx` wraps everything in `<React.StrictMode>`.
+  - In development StrictMode mounts, cleans up and re-mounts, so `POST /auth/oauth/exchange { code }` (single-use per your own comment) and `GET /auth/verify-email` are sent twice. The first result is discarded, and the second may come back as "already used", showing a failure for a successful sign-in. This depends on backend semantics and is development-only.
+  - The comment "establishSession/navigate are stable across renders" is wrong: `establishSession` is re-created on every render in `AuthProvider`. The `eslint-disable react-hooks/exhaustive-deps` hides it.
+  
+  Fix: run the request once per `code` (ref guard) without discarding the first result on cleanup, and delete the false comment.
+- **I6** `ChangePasswordPage` — correctness (behavior change, confirm with author): on success it says "All active sessions have been signed out… Please log in again" and offers a button to `/login`, but never clears the local session. The page is nested in `AuthenticatedLayout`, so the header and user menu remain and `isAuthenticated` stays true until a later request gets a 401. Fix: call `setAccessToken(null)` on success, then go to `/login` (with a success toast).
+- **I7** `UserMenu.tsx`, `NotFoundPage.tsx`, `RegisterPage.tsx` — leftover debug logging:
+  - `console.log(user)` runs on every render of `UserMenu` and in `NotFoundPage`, dumping email, name, ids and linked-account ids to the console.
+  - `handleSubmit(onSubmit,(errors)=>console.log('❌ ZOD FAILED:', errors))` is in `RegisterPage`.
+  
+  Fix: delete all three; the second `handleSubmit` argument isn't needed.
+- **I8** `package.json`, `tsconfig*.json` — tooling and tests:
+  - `"test:api": "node --experimental-strip-types --test tests/api-validation.test.ts"` points at a `tests/` folder that doesn't exist. `guards.ts`, the trust-boundary validation that AGENTS.md requires tests for, has none.
+  - No ESLint or Prettier is installed, yet `ErrorBoundary.tsx` and `OAuthCallbackPage.tsx` carry `eslint-disable` directives, and indentation drifts (`SessionsPage`, `AdminPermissionsPage.loadPermissions`, `AuthenticatedLayout`).
+  - `tsconfig.json` sets `"types": ["node"]` for browser code, and `tsconfig.node.json` has no `strict`.
+  
+  Fix: add `tests/api-validation.test.ts` (accept/reject cases per guard) or delete the script. Install ESLint (`react-hooks`) and Prettier, drop `types: ["node"]` from the app config, and add `"strict": true` to the node config.
+- **I9** Remnants and journal comments — comments:
+  - `App.tsx` has a long comment about `CustomerProtectedRoute` and `/customer/oauth/callback` with no routes after it.
+  - `.gitignore` lists `**/customer/`, `CustomerOAuthCallbackPage.tsx` and `src/pages/customer`.
+  - `motion-variants.ts`, `StatusIconHeader`, `StatusLink` and `GlassCard` still cite the customer pages.
+  - Change-log comments ("now come from the shared…", "approved as part of the UI dedup pass", "used to each hand-roll…") appear in about ten files.
+  - `AuthContext` has a "Phase 8/9" doc comment.
+  - `LoginPage` has an orphan `/** POST /auth/login returns either shape… */`.
+  - `api/guards.ts` still contains pasted instructions ("أضف التالي أسفل الكود الموجود", "المرحلة الثالثة…") and a `C:/Users/b/...` path.
+  
+  Fix: delete all of these (git keeps the history) and keep only why-comments like those in `client.ts` and `tokenStore.ts`.
+- **I10** Dead or half-finished code — YAGNI:
+  - `HomePage`, the post-login landing page, renders only a background and `<div className="relative z-10 min-h-screen" />`.
+  - `ProtectedRoute` passes `state={{ from: location }}`, but `LoginPage` and `OAuthCallbackPage` always `navigate('/home')`, so deep links are lost.
+  - `UserMenu` has `isLoggingOut`, `profileHref`, `sessionsHref`, `securityHref` and `changePasswordHref` props that no caller passes.
+  - `lucide-react` is in `dependencies` but never imported; the code uses emoji and glyphs (👥 🔐 ↓ ×).
+  
+  Fix: implement or redirect `HomePage`. Either read `location.state.from` after login or drop the `state`. Delete the unused props and the dependency, or use it for the icons.
+- **I11** Layout and stacking — correctness (reasoned from the CSS, not seen in a browser):
+  - `AuthenticatedLayout` renders `AppHeader` and then `<Outlet />`, but every page root is `min-h-screen` (Profile, Sessions, Security, ChangePassword, Admin*, Home and the denied screen). Page height becomes header + 100vh, so it always scrolls.
+  - The default `AnimatedBackground` wrapper and the Profile, Security and Sessions wrappers use `-z-10` inside roots that have an opaque `bg-slate-950` and no stacking context. The blobs should paint underneath that background and never show, while their infinite animations still run.
+  - `FullPageLoading`, `ErrorBoundary` and `RequirePermissionRoute` use light `bg-slate-100` in a dark app.
+  
+  Fix: make the layout `flex min-h-screen flex-col` with pages using `flex-1`. Add `isolate` to page roots, or use non-negative wrappers with `relative z-10` content as `HomePage` does. Use `bg-slate-950` on those three screens.
+- **I12** `AuthContext.tsx`, `SessionsPage.tsx` — DRY and swallowed errors:
+  - (a) The restore effect and `establishSession` repeat the same "GET /users/me → `isAuthUser` → `loadAccess` → version checks" sequence. The effect also repeats `if (cancelled || restoreVersion !== getAuthVersion()) return;` twice with no `await` in between.
+  - (b) The restore `catch { … setAccessToken(null) … }` treats every failure (network drop, 500, unexpected shape) as "logged out" with no trace (behavior change, confirm with author). `SessionsPage.handleRevoke` does the same for a failed `refreshAccessToken()` and has no why-comment for calling it.
+  
+  Fix: extract one `loadSession(version)` returning `{ user, access }` and use it in both places. Treat only auth failures (401 or refresh rejected) as signed-out, and log or surface the rest. Add the why-comment.
+
+## Nits
+- **N1** Naming and copy: `SecurityPage.tsx` exports `TwoFactorSetupPage`. Three imports use `'././pages/...'` (`OAuthCallbackPage`, `SessionsPage`, `ChangePasswordPage`). The menu label `change password` is lower-case beside Profile, Sessions and Security. `index.html` says `my-app-frontend` while the product is FlowDesk. Fix: rename the component, normalize the import paths, use "Change password", and set `<title>FlowDesk</title>`.
+- **N2** Form accessibility: the role `<select>` label in `AdminUsersPage` and every field in `AdminPermissionsPage` have `<label>` without `htmlFor`/`id`. The auth pages and `AdminRolesPage` do this correctly. `RegisterPage` also uses `type="text"` for email while other forms use `type="email"`. Fix: add matching `id`/`htmlFor`, use `type="email"` and add `autoComplete`.
+- **N3** `OAuthCallbackPage` success path: `navigate('/home')` (the 2FA path uses `{ replace: true }`), so Back returns to a callback URL whose code is already spent. Fix: `navigate('/home', { replace: true })`.
+
+## What's good
+- Every API response is typed `unknown` and validated by a type guard before use (`api/guards.ts`). There is no `any` or `@ts-ignore`, and `strict` is on, which matches AGENTS.md.
+- The auth plumbing is thoughtful: in-memory access token, CSRF header from the cookie, `authVersion` to stop stale retries, and coalesced refresh, all with why-comments.
+- Extracting `motion-variants.ts`, `GlassCard` and `StatusLink` is the right direction; it just stopped halfway.
+
+## Coverage
+- Section A (naming and functions): I4 (oversized components) and N1. No banned generic names, boolean flag args or CQS violations found.
+- Section B (comments and formatting): I9, I8 (formatting drift), N1.
+- Section C (SOLID): I4 and I12 (SRP: pages own fetching, forms and mutations; `AuthProvider` mixes token sync, restore, login and logout), I2 (pages call `apiClient` and endpoint strings directly). OCP, LSP and ISP are clean: no inheritance and no type-tag dispatch.
+- Section D (DRY/KISS/YAGNI): I1, I2, I3, I4, I10.
+- Section E (AI failure modes): I5, I7, I10, I12. No hardcoded "success" returns or mock fixtures, and no boundary validation was removed.
+
+## Not verified
+- I didn't run `tsc -b`, the build or any tests.
+- I didn't open `.env`, since it holds secrets; `.gitignore` excludes it.
+- I5 and I11 are reasoned from the code, not observed in a browser.
+- I didn't compare installed package versions against `package-lock.json`, or check backend DTOs such as the name rules behind Critical 2.
+
+I haven't changed any files. Tell me which findings to fix first and I'll make those changes.
+
+
+///////////////////////////////////////////////////////////////////
 import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { motion, AnimatePresence, type Variants } from 'framer-motion';
 import { Button, Input } from '@heroui/react';
-import { useAuth } from '../../auth/AuthContext';
+
 import { apiClient } from '../../api/client';
 import { getErrorMessage } from '../../api/errors';
 import { useToast } from '../../ui/ToastContext';
@@ -95,10 +208,6 @@ const ADMIN_ROLES_BACKGROUND_PULSE_BLOB: AnimatedBackgroundPulseBlob = {
 };
 
 function AdminRolesPage() {
-  const { hasPermission } = useAuth();
-  const canReadPermissions = hasPermission('permissions:read');
-  const [permissionsError, setPermissionsError] =
-    useState<string | null>(null);
   const { showToast } = useToast();
 
   const [roles, setRoles] = useState<RoleItem[] | null>(null);
@@ -128,49 +237,33 @@ function AdminRolesPage() {
     },
   });
 
-  async function loadRoles(): Promise<void> {
+  async function loadRolesAndPermissions(): Promise<void> {
     setError(null);
 
     try {
-      const response = await apiClient.get<unknown>('/authorization/roles');
+      const [rolesRes, permissionsRes] = await Promise.all([
+        apiClient.get<unknown>('/authorization/roles'),
+        apiClient.get<unknown>('/authorization/permissions'),
+      ]);
 
-      if (!isRoleItemArray(response.data)) {
+      if (!isRoleItemArray(rolesRes.data)) {
         throw new Error('Unexpected roles response');
       }
 
-      setRoles(response.data);
+      if (!isPermissionItemArray(permissionsRes.data)) {
+        throw new Error('Unexpected permissions response');
+      }
+
+      setRoles(rolesRes.data);
+      setPermissions(permissionsRes.data);
     } catch (err: unknown) {
       setError(getErrorMessage(err));
     }
   }
 
-  async function loadPermissionCatalog(): Promise<void> {
-    setPermissions([]);
-    setPermissionsError(null);
-    if (!canReadPermissions) return;
-
-    try {
-      const response = await apiClient.get<unknown>(
-        '/authorization/permissions',
-      );
-
-      if (!isPermissionItemArray(response.data)) {
-        throw new Error('Unexpected permissions response');
-      }
-
-      setPermissions(response.data);
-    } catch (err: unknown) {
-      setPermissionsError(getErrorMessage(err));
-    }
-  }
-
-  async function loadRolesAndPermissions(): Promise<void> {
-    await Promise.all([loadRoles(), loadPermissionCatalog()]);
-  }
-
   useEffect(() => {
-    void loadRolesAndPermissions();
-  }, [canReadPermissions]);
+    loadRolesAndPermissions();
+  }, []);
 
   async function onCreateRole(values: RoleFormValues) {
     setRowError(null);
@@ -212,7 +305,7 @@ function AdminRolesPage() {
     try {
       await apiClient.patch(`/authorization/roles/${editingRoleId}`, {
         name: values.name,
-        description: values.description || "",
+        description: values.description || undefined,
       });
 
       setEditingRoleId(null);
@@ -463,7 +556,7 @@ function AdminRolesPage() {
                             id="create-role-name"
                             placeholder="e.g. manager"
                             {...createForm.register('name')}
-                            className="text-black"
+                            className="text-white"
                           />
 
                           {createForm.formState.errors.name && (
@@ -488,7 +581,7 @@ function AdminRolesPage() {
                             id="create-role-description"
                             placeholder="Optional description"
                             {...createForm.register('description')}
-                            className="text-black"
+                            className="text-white"
                           />
 
                           {createForm.formState.errors.description && (
@@ -613,7 +706,7 @@ function AdminRolesPage() {
                                 <Input
                                   id={`edit-role-name-${role.id}`}
                                   {...editForm.register('name')}
-                                  className="text-black"
+                                  className="text-white"
                                 />
 
                                 {editForm.formState.errors.name && (
@@ -639,7 +732,7 @@ function AdminRolesPage() {
                                   {...editForm.register(
                                     'description',
                                   )}
-                                  className="text-black"
+                                  className="text-white"
                                 />
                               </div>
                             </div>
@@ -819,7 +912,7 @@ function AdminRolesPage() {
                                     },
                                   )}
                                 </div>
-            
+
                                 {/* Assign permission */}
                                 {assignablePermissions.length >
                                   0 && (

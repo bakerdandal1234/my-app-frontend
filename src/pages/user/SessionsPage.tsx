@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Button, Card } from '@heroui/react';
 import { motion, AnimatePresence, type Variants } from 'framer-motion';
 import { apiClient, refreshAccessToken } from '../../api/client';
-import { setAccessToken } from '../../api/tokenStore';
+import { getAuthVersion, setAccessToken } from '../../api/tokenStore';
 import { getErrorMessage } from '../../api/errors';
 import { useAuth } from '../../auth/AuthContext';
 import AnimatedBackground, {
@@ -98,18 +98,23 @@ function SessionsPage() {
   }, []);
 
   async function handleRevoke(id: string) {
+    const version = getAuthVersion();
     setRevokingId(id);
     setError(null);
 
     try {
       await apiClient.delete(`/sessions/${id}`);
+      if (version !== getAuthVersion()) return;
       await loadSessions();
+      if (version !== getAuthVersion()) return;
 
       try {
         await refreshAccessToken();
       } catch {
-        setAccessToken(null);
-        navigate('/login');
+        if (version === getAuthVersion()) {
+          setAccessToken(null);
+          navigate('/login');
+        }
       }
     } catch (err) {
       setError(getErrorMessage(err));
@@ -119,11 +124,13 @@ function SessionsPage() {
   }
 
   async function handleRevokeAll() {
+    const version = getAuthVersion();
     setRevokingAll(true);
     setError(null);
 
     try {
       await apiClient.delete('/sessions');
+      if (version !== getAuthVersion()) return;
 
       await logout();
     } catch (err) {

@@ -7,7 +7,12 @@ import {
 } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { apiClient, refreshAccessToken } from '../api/client';
-import { getAccessToken, setAccessToken, subscribeToAccessToken } from '../api/tokenStore';
+import {
+  getAccessToken,
+  getAuthVersion,
+  setAccessToken,
+  subscribeToAccessToken,
+} from '../api/tokenStore';
 import {
   isAuthUser,
   isUserAccess,
@@ -60,7 +65,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [access, setAccess] = useState<AccessInfo>(EMPTY_ACCESS);
   const [isLoading, setIsLoading] = useState(true);
-
   // tokenStore is mutated directly by apiClient's interceptors (background
   // refresh, or forced logout when a refresh ultimately fails) — this keeps
   // React state in sync with those out-of-band changes. This is also what
@@ -74,25 +78,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (!token) {
         setUser(null);
         setAccess(EMPTY_ACCESS);
+        setIsLoading(false);
       }
     });
   }, []);
 
-  async function loadAccess(): Promise<void> {
-    try {
-      const response = await apiClient.get<unknown>('/users/me/access');
+  async function loadAccess(
+    expectedUserId: string,
+  ): Promise<AccessInfo> {
+    const response = await apiClient.get<unknown>('/users/me/access');
 
-      if (!isUserAccess(response.data)) {
-        throw new Error('Unexpected access response');
-      }
-
-      setAccess({
-        roles: response.data.roles,
-        permissions: response.data.permissions,
-      });
-    } catch {
-      setAccess(EMPTY_ACCESS);
+    if (
+      !isUserAccess(response.data) ||
+      response.data.userId !== expectedUserId
+    ) {
+      throw new Error('Unexpected access response');
     }
+
+    return {
+      roles: response.data.roles,
+      permissions: response.data.permissions,
+    };
   }
 
   // On first mount: try to restore a session from the httpOnly
@@ -102,28 +108,34 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // flash on every refresh.
   useEffect(() => {
     let cancelled = false;
-
+    const restoreVersion = getAuthVersion();
     (async () => {
       try {
         await refreshAccessToken();
-        if (cancelled) return;
+        if (cancelled || restoreVersion !== getAuthVersion()) return;
         const me = await apiClient.get<unknown>('/users/me');
-        if (cancelled) return;
+        if (cancelled || restoreVersion !== getAuthVersion()) return;
         if (!isAuthUser(me.data)) {
           throw new Error('Unexpected user response');
         }
+        if (cancelled || restoreVersion !== getAuthVersion()) return;
+
+        const nextAccess = await loadAccess(me.data.id);
+
+        if (cancelled || restoreVersion !== getAuthVersion()) return;
+
         setUser(me.data);
-        await loadAccess();
+        setAccess(nextAccess);
       } catch {
-        if (!cancelled) {
+        if (!cancelled && restoreVersion === getAuthVersion()) {
           setAccessToken(null);
           setUser(null);
           setAccess(EMPTY_ACCESS);
         }
       } finally {
-         if (!cancelled) {
-        setIsLoading(false);
-      }
+        if (!cancelled && restoreVersion === getAuthVersion()) {
+          setIsLoading(false);
+        }
       }
     })();
 
@@ -133,39 +145,58 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   async function establishSession(newAccessToken: string): Promise<void> {
+    setUser(null);
+    setAccess(EMPTY_ACCESS);
     setAccessToken(newAccessToken);
+    const version = getAuthVersion();
 
     try {
       const me = await apiClient.get<unknown>('/users/me');
+
+      if (version !== getAuthVersion()) {
+        throw new Error('Authentication was superseded');
+      }
 
       if (!isAuthUser(me.data)) {
         throw new Error('Unexpected user response');
       }
 
+      const nextAccess = await loadAccess(me.data.id);
+
+      if (version !== getAuthVersion()) {
+        throw new Error('Authentication was superseded');
+      }
+
       setUser(me.data);
-      await loadAccess();
+      setAccess(nextAccess);
     } catch (error: unknown) {
-      // لا نحتفظ بجلسة محلية غير مكتملة عند فشل تحميل المستخدم.
-      setAccessToken(null);
-      setUser(null);
-      setAccess(EMPTY_ACCESS);
+      if (version === getAuthVersion()) {
+        setAccessToken(null);
+      }
+
       throw error;
+    } finally {
+      if (version === getAuthVersion()) {
+        setIsLoading(false);
+      }
     }
   }
 
   async function logout(): Promise<void> {
+    const token = getAccessToken();
+    setAccessToken(null);
+    const version = getAuthVersion();
+
     try {
-      // Reads the refresh_token cookie server-side to revoke that one
-      // session; the bearer access token (attached automatically by
-      // apiClient's request interceptor) identifies the caller.
-      await apiClient.post('/auth/logout');
+      // Retain only the revocation request's credentials after local logout.
+      await apiClient.post('/auth/logout', {}, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        _retry: true,
+      });
     } catch {
-      // Even if this fails (network issue, session already gone, etc.)
-      // there's nothing more the user can do about it — proceed to clear
-      // local state regardless so the UI still reflects "logged out".
+      // Local logout remains effective when server revocation fails.
     } finally {
-      setAccessToken(null); // subscribeToAccessToken listener above clears `user`/`access`
-      navigate('/');
+      if (version === getAuthVersion()) navigate('/');
     }
   }
 

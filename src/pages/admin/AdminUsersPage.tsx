@@ -1,7 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from '@heroui/react';
-
 import { apiClient } from '../../api/client';
 import { getErrorMessage } from '../../api/errors';
 import { useToast } from '../../ui/ToastContext';
@@ -73,18 +72,25 @@ function getDisplayName(user: AdminUser) {
   return name || 'No name';
 }
 
+type AccessSelection = {
+  userId: string;
+};
+
 function AdminUsersPage() {
   const { showToast } = useToast();
-
+  const accessRequestIdRef = useRef(0);
   const [users, setUsers] = useState<AdminUser[] | null>(null);
   const [roles, setRoles] = useState<RoleItem[]>([]);
   const [error, setError] = useState<string | null>(null);
 
-  // Which user row is expanded, and that user's current roles.
-  // Access is loaded lazily when a row is expanded.
-  const [expandedUserId, setExpandedUserId] = useState<string | null>(
-    null,
-  );
+  // Every opening gets a distinct identity, including reopening the same user.
+  const [expandedSelection, setExpandedSelection] =
+    useState<AccessSelection | null>(null);
+  const expandedUserId = expandedSelection?.userId ?? null;
+
+  const selectionRef = useRef<AccessSelection | null>(null);
+  const mutationPendingRef = useRef(false);
+  const mountedRef = useRef(false);
 
   const [access, setAccess] = useState<UserAccess | null>(null);
   const [accessError, setAccessError] = useState<string | null>(null);
@@ -121,92 +127,151 @@ function AdminUsersPage() {
   }
 
   useEffect(() => {
-    loadUsersAndRoles();
+    mountedRef.current = true;
+    void loadUsersAndRoles();
+
+    return () => {
+      mountedRef.current = false;
+      selectionRef.current = null;
+      accessRequestIdRef.current += 1;
+    };
   }, []);
 
-  async function loadAccess(userId: string): Promise<void> {
+  function isCurrentSelection(selection: AccessSelection): boolean {
+    return mountedRef.current && selectionRef.current === selection;
+  }
+
+  function getCurrentSelection(userId: string): AccessSelection | null {
+    if (
+      !expandedSelection ||
+      expandedSelection.userId !== userId ||
+      !isCurrentSelection(expandedSelection)
+    ) {
+      return null;
+    }
+
+    return expandedSelection;
+  }
+
+  function resetAccessPanel(): void {
+    setAccess(null);
     setAccessError(null);
     setSelectedRoleId('');
+  }
+
+  async function loadAccess(selection: AccessSelection): Promise<void> {
+    if (!isCurrentSelection(selection)) return;
+
+    const requestId = ++accessRequestIdRef.current;
+    resetAccessPanel();
+
+    const canCommit = () =>
+      isCurrentSelection(selection) &&
+      accessRequestIdRef.current === requestId;
 
     try {
-      const res = await apiClient.get<unknown>(
-        `/authorization/users/${userId}/access`,
+      const response = await apiClient.get<unknown>(
+        `/authorization/users/${selection.userId}/access`,
       );
 
-      if (!isUserAccess(res.data)) {
+      if (
+        !isUserAccess(response.data) ||
+        response.data.userId !== selection.userId
+      ) {
         throw new Error('Unexpected user access response');
       }
 
-      setAccess(res.data);
+      if (canCommit()) setAccess(response.data);
     } catch (err: unknown) {
-      setAccessError(getErrorMessage(err));
+      // Failures from an obsolete request must not replace the active panel.
+      if (canCommit()) setAccessError(getErrorMessage(err));
     }
   }
 
-  function toggleExpand(userId: string) {
-    if (expandedUserId === userId) {
-      setExpandedUserId(null);
-      setAccess(null);
-      return;
-    }
+  function toggleExpand(userId: string): void {
+    const nextSelection =
+      selectionRef.current?.userId === userId ? null : { userId };
 
-    setExpandedUserId(userId);
-    setAccess(null);
-    loadAccess(userId);
+    selectionRef.current = nextSelection;
+    setExpandedSelection(nextSelection);
+
+    if (nextSelection) {
+      void loadAccess(nextSelection);
+    } else {
+      resetAccessPanel();
+    }
   }
 
-  async function handleAssignRole(userId: string) {
-    if (!selectedRoleId) return;
+  async function mutateUserRole(
+    selection: AccessSelection,
+    mutation: () => Promise<unknown>,
+    successMessage: string,
+  ): Promise<void> {
+    if (mutationPendingRef.current) return;
 
-    const roleName =
-      roles.find((role) => role.id === selectedRoleId)?.name ??
-      'role';
-
+    mutationPendingRef.current = true;
     setIsMutating(true);
     setAccessError(null);
 
     try {
-      await apiClient.post(
-        `/authorization/users/${userId}/roles/${selectedRoleId}`,
-      );
+      await mutation();
 
-      await loadAccess(userId);
+      // A reopened panel needs a fresh request bound to its new identity.
+      const currentSelection = selectionRef.current;
+      if (currentSelection?.userId === selection.userId) {
+        await loadAccess(currentSelection);
+      }
 
-      showToast(`Assigned "${roleName}" role`);
-    } catch (err) {
-      setAccessError(getErrorMessage(err));
+      if (isCurrentSelection(selection)) showToast(successMessage);
+    } catch (err: unknown) {
+      if (isCurrentSelection(selection)) {
+        setAccessError(getErrorMessage(err));
+      }
     } finally {
-      setIsMutating(false);
+      mutationPendingRef.current = false;
+      if (mountedRef.current) setIsMutating(false);
     }
+  }
+
+  async function handleAssignRole(userId: string): Promise<void> {
+    const selection = getCurrentSelection(userId);
+    const role = roles.find((role) => role.id === selectedRoleId);
+    if (!selection || !role) return;
+
+    await mutateUserRole(
+      selection,
+      () =>
+        apiClient.post<unknown>(
+          `/authorization/users/${userId}/roles/${role.id}`,
+        ),
+      `Assigned "${role.name}" role`,
+    );
   }
 
   async function handleRemoveRole(
     userId: string,
     roleName: string,
-  ) {
+  ): Promise<void> {
+    const selection = getCurrentSelection(userId);
     const roleId = roleIdByName.get(roleName);
+    if (!selection || !roleId) return;
 
-    if (!roleId) return;
-
-    setIsMutating(true);
-    setAccessError(null);
-
-    try {
-      await apiClient.delete(
-        `/authorization/users/${userId}/roles/${roleId}`,
-      );
-
-      await loadAccess(userId);
-
-      showToast(`Removed "${roleName}" role`);
-    } catch (err) {
-      setAccessError(getErrorMessage(err));
-    } finally {
-      setIsMutating(false);
-    }
+    await mutateUserRole(
+      selection,
+      () =>
+        apiClient.delete<unknown>(
+          `/authorization/users/${userId}/roles/${roleId}`,
+        ),
+      `Removed "${roleName}" role`,
+    );
   }
 
-  const assignableRoles = access
+  function selectRole(userId: string, roleId: string): void {
+    if (!getCurrentSelection(userId) || mutationPendingRef.current) return;
+    setSelectedRoleId(roleId);
+  }
+
+  const assignableRoles = access?.userId === expandedUserId
     ? roles.filter((role) => !access.roles.includes(role.name))
     : [];
 
@@ -454,7 +519,7 @@ function AdminUsersPage() {
                                   )}
 
                                   {/* Access */}
-                                  {access && (
+                                  {access?.userId === user.id && (
                                     <div className="space-y-5">
                                       {/* Current Roles */}
                                       <div>
@@ -537,10 +602,7 @@ function AdminUsersPage() {
                                                   selectedRoleId
                                                 }
                                                 onChange={(event) =>
-                                                  setSelectedRoleId(
-                                                    event.target
-                                                      .value,
-                                                  )
+                                                  selectRole(user.id, event.target.value)
                                                 }
                                                 disabled={
                                                   isMutating

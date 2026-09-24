@@ -4,7 +4,6 @@ import { Button } from '@heroui/react';
 import { AnimatePresence, motion } from 'framer-motion';
 
 
-
 export interface HeaderUser {
   email?: string;
   firstName?: string | null;
@@ -69,7 +68,6 @@ export default function UserMenu({
     setIsOpen(false);
     await onLogout();
   }
-
   return (
     <div ref={menuRef} className="relative">
       <button

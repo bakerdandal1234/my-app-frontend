@@ -13,13 +13,29 @@
 type Listener = (token: string | null) => void;
 
 let accessToken: string | null = null;
+let authVersion = 0;
 const listeners = new Set<Listener>();
 
 export function getAccessToken(): string | null {
   return accessToken;
 }
 
+/** Login, logout, and invalidation supersede work from the previous session. */
+export function getAuthVersion(): number {
+  return authVersion;
+}
+
 export function setAccessToken(token: string | null): void {
+  authVersion += 1;
+  publishAccessToken(token);
+}
+
+/** A refresh rotates credentials without invalidating the same user's requests. */
+export function setRefreshedAccessToken(token: string): void {
+  publishAccessToken(token);
+}
+
+function publishAccessToken(token: string | null): void {
   accessToken = token;
   listeners.forEach((listener) => listener(token));
 }

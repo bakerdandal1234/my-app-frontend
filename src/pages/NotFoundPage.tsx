@@ -118,7 +118,7 @@ function NotFoundPage() {
               className="mt-7"
             >
               <StatusLink
-                to={user?.email ? '/home' : '/customer/account'}              >
+                to='/home'>
                 Back to home
               </StatusLink>
 
