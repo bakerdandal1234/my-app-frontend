@@ -5,9 +5,9 @@ import { Card } from '@heroui/react';
 import { statusItemVariants } from '../../lib/motion-variants';
 
 /**
- * The "back to X" footer link repeated verbatim across VerifyEmailPage,
- * OAuthCallbackPage and CustomerOAuthCallbackPage (twice there) — same
- * markup and motion, differing only in the destination and label.
+ * The "back to X" footer link repeated verbatim across VerifyEmailPage
+ * and OAuthCallbackPage — same markup and motion, differing only in the
+ * destination and label.
  */
 interface StatusFooterLinkProps {
   to: string;

@@ -21,8 +21,7 @@ import {
   isPermissionItemArray,
   type PermissionItem,
 } from '../../api/guards';
-
-
+import { formatPermission } from '../../auth/permissions';
 
 /** Mirrors CreatePermissionDto/UpdatePermissionDto. */
 const permissionSchema = z.object({
@@ -41,11 +40,6 @@ const permissionSchema = z.object({
 });
 
 type PermissionFormValues = z.infer<typeof permissionSchema>;
-
-// containerVariants / itemVariants / errorVariants now come from the
-// shared ../../lib/motion-variants (this "admin list page" family is also
-// used by AdminUsersPage; AdminRolesPage shares itemVariants/
-// errorVariants but keeps its own containerVariants — see that file).
 
 const ADMIN_PERMISSIONS_BACKGROUND_WRAPPER_CLASSNAME =
   'pointer-events-none absolute inset-0 overflow-hidden';
@@ -139,7 +133,7 @@ function AdminPermissionsPage() {
       await loadPermissions();
 
       showToast(
-        `Permission "${values.resource}:${values.action}" created`,
+        `Permission "${formatPermission(values)}" created`,
       );
     } catch (err) {
       setRowError(getErrorMessage(err));
@@ -185,7 +179,7 @@ function AdminPermissionsPage() {
   async function handleDelete(permission: PermissionItem) {
     if (
       !window.confirm(
-        `Delete permission "${permission.resource}:${permission.action}"? This also removes it from every role that has it.`,
+        `Delete permission "${formatPermission(permission)}"? This also removes it from every role that has it.`,
       )
     ) {
       return;
@@ -201,7 +195,7 @@ function AdminPermissionsPage() {
       await loadPermissions();
 
       showToast(
-        `Permission "${permission.resource}:${permission.action}" deleted`,
+        `Permission "${formatPermission(permission)}" deleted`,
       );
     } catch (err) {
       setRowError(getErrorMessage(err));
@@ -597,8 +591,7 @@ function AdminPermissionsPage() {
 
                                 <div className="min-w-0">
                                   <p className="truncate font-mono text-sm font-medium text-white">
-                                    {permission.resource}:
-                                    {permission.action}
+                                    {formatPermission(permission)}
                                   </p>
 
                                   <p className="mt-1 truncate text-xs text-slate-500">

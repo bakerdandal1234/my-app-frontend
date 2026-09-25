@@ -1,9 +1,7 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Button } from '@heroui/react';
 import { apiClient } from '../../api/client';
 import { getErrorMessage } from '../../api/errors';
-import { useToast } from '../../ui/ToastContext';
 import AnimatedBackground, {
   type AnimatedBackgroundBlob,
 } from '../../components/layout/AnimatedBackground';
@@ -16,20 +14,10 @@ import {
 import {
   isAdminUserArray,
   isRoleItemArray,
-  isUserAccess,
   type AdminUser,
   type RoleItem,
-  type UserAccess,
 } from '../../api/guards';
-
-
-
-
-
-// containerVariants / itemVariants / errorVariants now come from the
-// shared ../../lib/motion-variants (this "admin list page" family is also
-// used by AdminPermissionsPage; AdminRolesPage shares itemVariants/
-// errorVariants but keeps its own containerVariants — see that file).
+import AdminUserRow from './AdminUserRow';
 
 const ADMIN_USERS_BACKGROUND_WRAPPER_CLASSNAME =
   'pointer-events-none absolute inset-0 overflow-hidden';
@@ -53,57 +41,18 @@ const ADMIN_USERS_BACKGROUND_BLOBS: AnimatedBackgroundBlob[] = [
   },
 ];
 
-function getInitials(user: AdminUser) {
-  const first = user.firstName?.trim().charAt(0) ?? '';
-  const last = user.lastName?.trim().charAt(0) ?? '';
-
-  if (first || last) {
-    return `${first}${last}`.toUpperCase();
-  }
-
-  return user.email.charAt(0).toUpperCase();
-}
-
-function getDisplayName(user: AdminUser) {
-  const name = [user.firstName, user.lastName]
-    .filter(Boolean)
-    .join(' ');
-
-  return name || 'No name';
-}
-
-type AccessSelection = {
-  userId: string;
-};
-
 function AdminUsersPage() {
-  const { showToast } = useToast();
-  const accessRequestIdRef = useRef(0);
   const [users, setUsers] = useState<AdminUser[] | null>(null);
   const [roles, setRoles] = useState<RoleItem[]>([]);
   const [error, setError] = useState<string | null>(null);
 
-  // Every opening gets a distinct identity, including reopening the same user.
-  const [expandedSelection, setExpandedSelection] =
-    useState<AccessSelection | null>(null);
-  const expandedUserId = expandedSelection?.userId ?? null;
+  // Only one row's access panel can be open at a time; opening a
+  // different row (or the same one again) unmounts the previous
+  // AdminUserAccessPanel and mounts a fresh one — see useUserAccess.ts
+  // for why that mount boundary matters.
+  const [expandedUserId, setExpandedUserId] = useState<string | null>(null);
 
-  const selectionRef = useRef<AccessSelection | null>(null);
-  const mutationPendingRef = useRef(false);
-  const mountedRef = useRef(false);
-
-  const [access, setAccess] = useState<UserAccess | null>(null);
-  const [accessError, setAccessError] = useState<string | null>(null);
-  const [selectedRoleId, setSelectedRoleId] = useState('');
-  const [isMutating, setIsMutating] = useState(false);
-
-  // Role name -> id, because GET /authorization/users/:userId/access
-  // returns role names while assign/remove require the role id.
-  const roleIdByName = new Map(
-    roles.map((role) => [role.name, role.id]),
-  );
-
-  async function loadUsersAndRoles() {
+  async function loadUsersAndRoles(): Promise<void> {
     setError(null);
 
     try {
@@ -111,6 +60,7 @@ function AdminUsersPage() {
         apiClient.get<unknown>('/authorization/users'),
         apiClient.get<unknown>('/authorization/roles'),
       ]);
+
       if (!isAdminUserArray(usersRes.data)) {
         throw new Error('Unexpected users response');
       }
@@ -127,153 +77,12 @@ function AdminUsersPage() {
   }
 
   useEffect(() => {
-    mountedRef.current = true;
     void loadUsersAndRoles();
-
-    return () => {
-      mountedRef.current = false;
-      selectionRef.current = null;
-      accessRequestIdRef.current += 1;
-    };
   }, []);
 
-  function isCurrentSelection(selection: AccessSelection): boolean {
-    return mountedRef.current && selectionRef.current === selection;
-  }
-
-  function getCurrentSelection(userId: string): AccessSelection | null {
-    if (
-      !expandedSelection ||
-      expandedSelection.userId !== userId ||
-      !isCurrentSelection(expandedSelection)
-    ) {
-      return null;
-    }
-
-    return expandedSelection;
-  }
-
-  function resetAccessPanel(): void {
-    setAccess(null);
-    setAccessError(null);
-    setSelectedRoleId('');
-  }
-
-  async function loadAccess(selection: AccessSelection): Promise<void> {
-    if (!isCurrentSelection(selection)) return;
-
-    const requestId = ++accessRequestIdRef.current;
-    resetAccessPanel();
-
-    const canCommit = () =>
-      isCurrentSelection(selection) &&
-      accessRequestIdRef.current === requestId;
-
-    try {
-      const response = await apiClient.get<unknown>(
-        `/authorization/users/${selection.userId}/access`,
-      );
-
-      if (
-        !isUserAccess(response.data) ||
-        response.data.userId !== selection.userId
-      ) {
-        throw new Error('Unexpected user access response');
-      }
-
-      if (canCommit()) setAccess(response.data);
-    } catch (err: unknown) {
-      // Failures from an obsolete request must not replace the active panel.
-      if (canCommit()) setAccessError(getErrorMessage(err));
-    }
-  }
-
   function toggleExpand(userId: string): void {
-    const nextSelection =
-      selectionRef.current?.userId === userId ? null : { userId };
-
-    selectionRef.current = nextSelection;
-    setExpandedSelection(nextSelection);
-
-    if (nextSelection) {
-      void loadAccess(nextSelection);
-    } else {
-      resetAccessPanel();
-    }
+    setExpandedUserId((current) => (current === userId ? null : userId));
   }
-
-  async function mutateUserRole(
-    selection: AccessSelection,
-    mutation: () => Promise<unknown>,
-    successMessage: string,
-  ): Promise<void> {
-    if (mutationPendingRef.current) return;
-
-    mutationPendingRef.current = true;
-    setIsMutating(true);
-    setAccessError(null);
-
-    try {
-      await mutation();
-
-      // A reopened panel needs a fresh request bound to its new identity.
-      const currentSelection = selectionRef.current;
-      if (currentSelection?.userId === selection.userId) {
-        await loadAccess(currentSelection);
-      }
-
-      if (isCurrentSelection(selection)) showToast(successMessage);
-    } catch (err: unknown) {
-      if (isCurrentSelection(selection)) {
-        setAccessError(getErrorMessage(err));
-      }
-    } finally {
-      mutationPendingRef.current = false;
-      if (mountedRef.current) setIsMutating(false);
-    }
-  }
-
-  async function handleAssignRole(userId: string): Promise<void> {
-    const selection = getCurrentSelection(userId);
-    const role = roles.find((role) => role.id === selectedRoleId);
-    if (!selection || !role) return;
-
-    await mutateUserRole(
-      selection,
-      () =>
-        apiClient.post<unknown>(
-          `/authorization/users/${userId}/roles/${role.id}`,
-        ),
-      `Assigned "${role.name}" role`,
-    );
-  }
-
-  async function handleRemoveRole(
-    userId: string,
-    roleName: string,
-  ): Promise<void> {
-    const selection = getCurrentSelection(userId);
-    const roleId = roleIdByName.get(roleName);
-    if (!selection || !roleId) return;
-
-    await mutateUserRole(
-      selection,
-      () =>
-        apiClient.delete<unknown>(
-          `/authorization/users/${userId}/roles/${roleId}`,
-        ),
-      `Removed "${roleName}" role`,
-    );
-  }
-
-  function selectRole(userId: string, roleId: string): void {
-    if (!getCurrentSelection(userId) || mutationPendingRef.current) return;
-    setSelectedRoleId(roleId);
-  }
-
-  const assignableRoles = access?.userId === expandedUserId
-    ? roles.filter((role) => !access.roles.includes(role.name))
-    : [];
 
   return (
     <div className="relative min-h-screen overflow-hidden bg-slate-950 px-4 py-8 text-white sm:px-6 lg:px-8">
@@ -301,9 +110,7 @@ function AdminUsersPage() {
 
               <span className="text-slate-600">/</span>
 
-              <span className="text-sm text-slate-400">
-                Administration
-              </span>
+              <span className="text-sm text-slate-400">Administration</span>
             </div>
 
             <h1 className="text-3xl font-bold tracking-tight text-white">
@@ -328,8 +135,7 @@ function AdminUsersPage() {
 
                 <p className="mt-1 text-sm text-slate-400">
                   {users
-                    ? `${users.length} user${users.length === 1 ? '' : 's'
-                    }`
+                    ? `${users.length} user${users.length === 1 ? '' : 's'}`
                     : 'Loading users…'}
                 </p>
               </div>
@@ -371,9 +177,7 @@ function AdminUsersPage() {
                     👥
                   </div>
 
-                  <h3 className="font-medium text-white">
-                    No users found
-                  </h3>
+                  <h3 className="font-medium text-white">No users found</h3>
 
                   <p className="mt-1 text-sm text-slate-400">
                     There are currently no users to manage.
@@ -388,321 +192,19 @@ function AdminUsersPage() {
                   <div className="hidden border-b border-white/10 bg-white/5 px-5 py-3 text-xs font-medium uppercase tracking-wider text-slate-500 sm:grid sm:grid-cols-[1fr_150px]">
                     <span>User</span>
 
-                    <span className="text-right">
-                      Access
-                    </span>
+                    <span className="text-right">Access</span>
                   </div>
 
                   <ul className="divide-y divide-white/10">
-                    {users.map((user) => {
-                      const isExpanded =
-                        expandedUserId === user.id;
-
-                      return (
-                        <motion.li
-                          key={user.id}
-                          layout
-                          initial={{
-                            opacity: 0,
-                            y: 8,
-                          }}
-                          animate={{
-                            opacity: 1,
-                            y: 0,
-                          }}
-                          className="p-4 sm:px-5"
-                        >
-                          {/* User Header */}
-                          <button
-                            type="button"
-                            onClick={() =>
-                              toggleExpand(user.id)
-                            }
-                            className="group flex w-full items-center justify-between gap-4 text-left"
-                          >
-                            <div className="flex min-w-0 items-center gap-3">
-                              {/* Avatar */}
-                              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500/30 to-purple-500/30 text-sm font-semibold text-indigo-200 ring-1 ring-white/10">
-                                {getInitials(user)}
-                              </div>
-
-                              {/* User info */}
-                              <div className="min-w-0">
-                                <p className="truncate text-sm font-medium text-white">
-                                  {getDisplayName(user)}
-                                </p>
-
-                                <p className="truncate text-xs text-slate-500">
-                                  {user.email}
-                                </p>
-                              </div>
-                            </div>
-
-                            <div className="flex shrink-0 items-center gap-3">
-                              {/* Verification */}
-                              <span
-                                className={`hidden rounded-full border px-2.5 py-1 text-xs font-medium sm:inline-flex ${user.isEmailVerified
-                                  ? 'border-emerald-400/20 bg-emerald-500/10 text-emerald-300'
-                                  : 'border-amber-400/20 bg-amber-500/10 text-amber-300'
-                                  }`}
-                              >
-                                {user.isEmailVerified
-                                  ? 'Verified'
-                                  : 'Unverified'}
-                              </span>
-
-                              <span className="text-xs text-indigo-400 transition-colors group-hover:text-indigo-300">
-                                {isExpanded
-                                  ? 'Hide roles'
-                                  : 'Manage roles'}
-                              </span>
-
-                              <span
-                                className={`text-slate-500 transition-transform ${isExpanded
-                                  ? 'rotate-180'
-                                  : ''
-                                  }`}
-                              >
-                                ↓
-                              </span>
-                            </div>
-                          </button>
-
-                          {/* Expanded Access Panel */}
-                          <AnimatePresence initial={false}>
-                            {isExpanded && (
-                              <motion.div
-                                initial={{
-                                  opacity: 0,
-                                  height: 0,
-                                }}
-                                animate={{
-                                  opacity: 1,
-                                  height: 'auto',
-                                }}
-                                exit={{
-                                  opacity: 0,
-                                  height: 0,
-                                }}
-                                transition={{
-                                  duration: 0.25,
-                                }}
-                                className="overflow-hidden"
-                              >
-                                <div className="mt-4 rounded-xl border border-white/10 bg-black/10 p-4">
-                                  {/* Access Error */}
-                                  <AnimatePresence mode="wait">
-                                    {accessError && (
-                                      <motion.p
-                                        key="access-error"
-                                        variants={errorVariants}
-                                        initial="hidden"
-                                        animate="visible"
-                                        exit="hidden"
-                                        className="mb-4 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-200"
-                                        role="alert"
-                                      >
-                                        {accessError}
-                                      </motion.p>
-                                    )}
-                                  </AnimatePresence>
-
-                                  {/* Loading Roles */}
-                                  {!access && !accessError && (
-                                    <div className="flex items-center gap-3 py-4">
-                                      <div className="h-4 w-4 animate-spin rounded-full border-2 border-white/10 border-t-indigo-400" />
-
-                                      <p className="text-xs text-slate-400">
-                                        Loading roles…
-                                      </p>
-                                    </div>
-                                  )}
-
-                                  {/* Access */}
-                                  {access?.userId === user.id && (
-                                    <div className="space-y-5">
-                                      {/* Current Roles */}
-                                      <div>
-                                        <div className="mb-3 flex items-center justify-between">
-                                          <div>
-                                            <h3 className="text-sm font-medium text-white">
-                                              Assigned roles
-                                            </h3>
-
-                                            <p className="mt-1 text-xs text-slate-500">
-                                              Roles currently assigned to
-                                              this user.
-                                            </p>
-                                          </div>
-
-                                          <span className="rounded-full bg-white/5 px-2.5 py-1 text-xs text-slate-400">
-                                            {access.roles.length}
-                                          </span>
-                                        </div>
-
-                                        <div className="flex flex-wrap gap-2">
-                                          {access.roles.length === 0 && (
-                                            <span className="rounded-lg border border-dashed border-white/10 px-3 py-2 text-xs text-slate-500">
-                                              No roles assigned.
-                                            </span>
-                                          )}
-
-                                          {access.roles.map(
-                                            (roleName) => (
-                                              <span
-                                                key={roleName}
-                                                className="group flex items-center gap-1 rounded-full border border-indigo-400/20 bg-indigo-500/10 px-3 py-1.5 text-xs font-medium text-indigo-300"
-                                              >
-                                                {roleName}
-
-                                                <button
-                                                  type="button"
-                                                  onClick={() =>
-                                                    handleRemoveRole(
-                                                      user.id,
-                                                      roleName,
-                                                    )
-                                                  }
-                                                  disabled={
-                                                    isMutating
-                                                  }
-                                                  aria-label={`Remove ${roleName} role`}
-                                                  className="-mr-1 rounded-full p-1 text-indigo-400 transition hover:bg-red-500/20 hover:text-red-300 disabled:opacity-50"
-                                                >
-                                                  ×
-                                                </button>
-                                              </span>
-                                            ),
-                                          )}
-                                        </div>
-                                      </div>
-
-                                      {/* Assign Role */}
-                                      {assignableRoles.length > 0 && (
-                                        <div className="border-t border-white/10 pt-5">
-                                          <div className="mb-3">
-                                            <h3 className="text-sm font-medium text-white">
-                                              Assign a role
-                                            </h3>
-
-                                            <p className="mt-1 text-xs text-slate-500">
-                                              Add another role to this
-                                              user.
-                                            </p>
-                                          </div>
-
-                                          <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
-                                            <div className="flex-1">
-                                              <label className="mb-2 block text-xs font-medium text-slate-400">
-                                                Available roles
-                                              </label>
-
-                                              <select
-                                                value={
-                                                  selectedRoleId
-                                                }
-                                                onChange={(event) =>
-                                                  selectRole(user.id, event.target.value)
-                                                }
-                                                disabled={
-                                                  isMutating
-                                                }
-                                                className="w-full rounded-lg border border-white/10 bg-slate-900 px-3 py-2.5 text-sm text-white outline-none transition focus:border-indigo-400/50 focus:ring-2 focus:ring-indigo-500/20 disabled:cursor-not-allowed disabled:opacity-50"
-                                              >
-                                                <option
-                                                  value=""
-                                                  className="bg-slate-900"
-                                                >
-                                                  Add a role…
-                                                </option>
-
-                                                {assignableRoles.map(
-                                                  (role) => (
-                                                    <option
-                                                      key={role.id}
-                                                      value={role.id}
-                                                      className="bg-slate-900"
-                                                    >
-                                                      {role.name}
-                                                    </option>
-                                                  ),
-                                                )}
-                                              </select>
-                                            </div>
-
-                                            <Button
-                                              type="button"
-                                              variant="primary"
-                                              onPress={() =>
-                                                handleAssignRole(
-                                                  user.id,
-                                                )
-                                              }
-                                              isDisabled={
-                                                !selectedRoleId ||
-                                                isMutating
-                                              }
-                                              className="bg-indigo-600 text-white hover:bg-indigo-500 sm:min-w-24"
-                                            >
-                                              {isMutating
-                                                ? 'Assigning…'
-                                                : 'Assign'}
-                                            </Button>
-                                          </div>
-                                        </div>
-                                      )}
-
-                                      {assignableRoles.length ===
-                                        0 &&
-                                        roles.length > 0 && (
-                                          <p className="border-t border-white/10 pt-4 text-xs text-slate-500">
-                                            This user already has all
-                                            available roles.
-                                          </p>
-                                        )}
-
-                                      {/* Permissions */}
-                                      <div className="border-t border-white/10 pt-5">
-                                        <div className="mb-3">
-                                          <h3 className="text-sm font-medium text-white">
-                                            Effective permissions
-                                          </h3>
-
-                                          <p className="mt-1 text-xs text-slate-500">
-                                            Permissions inherited through
-                                            the assigned roles.
-                                          </p>
-                                        </div>
-
-                                        {access.permissions.length ===
-                                          0 ? (
-                                          <span className="text-xs text-slate-500">
-                                            No permissions available.
-                                          </span>
-                                        ) : (
-                                          <div className="flex max-h-40 flex-wrap gap-2 overflow-y-auto">
-                                            {access.permissions.map(
-                                              (permission) => (
-                                                <span
-                                                  key={permission}
-                                                  className="rounded-md border border-white/10 bg-white/5 px-2.5 py-1 text-xs font-mono text-slate-400"
-                                                >
-                                                  {permission}
-                                                </span>
-                                              ),
-                                            )}
-                                          </div>
-                                        )}
-                                      </div>
-                                    </div>
-                                  )}
-                                </div>
-                              </motion.div>
-                            )}
-                          </AnimatePresence>
-                        </motion.li>
-                      );
-                    })}
+                    {users.map((user) => (
+                      <AdminUserRow
+                        key={user.id}
+                        user={user}
+                        roles={roles}
+                        isExpanded={expandedUserId === user.id}
+                        onToggle={() => toggleExpand(user.id)}
+                      />
+                    ))}
                   </ul>
                 </div>
               )}

@@ -54,3 +54,13 @@ export function getErrorMessage(error: unknown): string {
 
   return 'Something went wrong. Please try again.';
 }
+
+/**
+ * True when the server rejected the credentials themselves (401/403), as
+ * opposed to a network drop, a 5xx or an unexpected response shape.
+ */
+export function isAuthRejection(error: unknown): boolean {
+  if (!isAxiosError<unknown, unknown>(error)) return false;
+  const status = error.response?.status;
+  return status === 401 || status === 403;
+}

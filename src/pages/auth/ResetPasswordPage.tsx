@@ -3,28 +3,21 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { Button, Card, Input, Label } from '@heroui/react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { Button, Card } from '@heroui/react';
+import { motion } from 'framer-motion';
 import { apiClient } from '../../api/client';
 import { getErrorMessage } from '../../api/errors';
-import AnimatedBackground from '../../components/layout/AnimatedBackground';
+import AuthPageShell from '../../components/layout/AuthPageShell';
 import GlassCard from '../../components/shared/GlassCard';
-import { containerVariants, itemVariants, errorVariants } from '../../lib/motion-variants';
+import FormField from '../../components/shared/FormField';
+import FormErrorBanner from '../../components/shared/FormErrorBanner';
+import { containerVariants, itemVariants } from '../../lib/motion-variants';
+import { passwordSchema } from '../../lib/validation';
 
 /** Mirrors ResetPasswordDto (auth/dto/reset-password.dto.ts). */
-const PASSWORD_RULE =
-  /((?=.*\d)|(?=.*\W+))(?![.\n])(?=.*[A-Z])(?=.*[a-z]).*$/;
-
-const PASSWORD_MESSAGE =
-  'Password must be 8-128 characters and contain an uppercase letter, a lowercase letter, and a number or symbol.';
-
 const resetPasswordSchema = z
   .object({
-    newPassword: z
-      .string()
-      .min(8, PASSWORD_MESSAGE)
-      .max(128, PASSWORD_MESSAGE)
-      .regex(PASSWORD_RULE, PASSWORD_MESSAGE),
+    newPassword: passwordSchema,
     confirmPassword: z.string(),
   })
   .refine((data) => data.newPassword === data.confirmPassword, {
@@ -80,9 +73,7 @@ function ResetPasswordPage() {
 
   if (!token) {
     return (
-      <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-slate-950 px-4">
-        <AnimatedBackground />
-
+      <AuthPageShell>
         <motion.div
           className="w-full max-w-sm"
           variants={containerVariants}
@@ -105,7 +96,7 @@ function ResetPasswordPage() {
             <Card.Content>
               <motion.p
                 variants={itemVariants}
-                className="rounded border border-red-500/30 bg-red-500/20 px-3 py-2 text-sm text-red-200"
+                className="rounded-lg border border-red-500/30 bg-red-500/20 px-3 py-2 text-sm text-red-200"
                 role="alert"
               >
                 This password reset link is missing its token.
@@ -129,7 +120,7 @@ function ResetPasswordPage() {
             </Card.Footer>
           </GlassCard>
         </motion.div>
-      </div>
+      </AuthPageShell>
     );
   }
 
@@ -139,9 +130,7 @@ function ResetPasswordPage() {
 
   if (success) {
     return (
-      <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-slate-950 px-4">
-        <AnimatedBackground />
-
+      <AuthPageShell>
         <motion.div
           className="w-full max-w-sm"
           variants={containerVariants}
@@ -188,7 +177,7 @@ function ResetPasswordPage() {
             </Card.Footer>
           </GlassCard>
         </motion.div>
-      </div>
+      </AuthPageShell>
     );
   }
 
@@ -197,9 +186,7 @@ function ResetPasswordPage() {
   // ------------------------------------------
 
   return (
-    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-slate-950 px-4">
-      <AnimatedBackground />
-
+    <AuthPageShell>
       <motion.form
         onSubmit={handleSubmit(onSubmit)}
         className="w-full max-w-sm"
@@ -221,82 +208,26 @@ function ResetPasswordPage() {
           </Card.Header>
 
           <Card.Content className="flex flex-col gap-4">
-            <AnimatePresence mode="wait">
-              {apiError && (
-                <motion.p
-                  key="reset-password-error"
-                  variants={errorVariants}
-                  initial="hidden"
-                  animate="visible"
-                  exit="hidden"
-                  className="rounded border border-red-500/30 bg-red-500/20 px-3 py-2 text-sm text-red-200"
-                  role="alert"
-                >
-                  {apiError}
-                </motion.p>
-              )}
-            </AnimatePresence>
+            <FormErrorBanner message={apiError} bannerKey="reset-password-error" />
 
-            {/* New password */}
-            <motion.div
-              variants={itemVariants}
-              className="flex flex-col gap-1"
-            >
-              <Label
-                htmlFor="newPassword"
-                isInvalid={!!errors.newPassword}
-                className="text-slate-200"
-              >
-                New password
-              </Label>
+            <FormField
+              id="newPassword"
+              label="New password"
+              type="password"
+              autoComplete="new-password"
+              registration={register('newPassword')}
+              error={errors.newPassword}
+              helperText="8+ characters, with uppercase, lowercase, and a number or symbol."
+            />
 
-              <Input
-                id="newPassword"
-                type="password"
-                fullWidth
-                autoComplete="new-password"
-                {...register('newPassword')}
-              />
-
-              <p className="text-xs leading-relaxed text-slate-400">
-                8+ characters, with uppercase, lowercase, and a number or
-                symbol.
-              </p>
-
-              {errors.newPassword && (
-                <p className="text-xs text-red-400">
-                  {errors.newPassword.message}
-                </p>
-              )}
-            </motion.div>
-
-            {/* Confirm password */}
-            <motion.div
-              variants={itemVariants}
-              className="flex flex-col gap-1"
-            >
-              <Label
-                htmlFor="confirmPassword"
-                isInvalid={!!errors.confirmPassword}
-                className="text-slate-200"
-              >
-                Confirm new password
-              </Label>
-
-              <Input
-                id="confirmPassword"
-                type="password"
-                fullWidth
-                autoComplete="new-password"
-                {...register('confirmPassword')}
-              />
-
-              {errors.confirmPassword && (
-                <p className="text-xs text-red-400">
-                  {errors.confirmPassword.message}
-                </p>
-              )}
-            </motion.div>
+            <FormField
+              id="confirmPassword"
+              label="Confirm new password"
+              type="password"
+              autoComplete="new-password"
+              registration={register('confirmPassword')}
+              error={errors.confirmPassword}
+            />
           </Card.Content>
 
           <Card.Footer className="flex flex-col gap-3">
@@ -330,7 +261,7 @@ function ResetPasswordPage() {
           </Card.Footer>
         </GlassCard>
       </motion.form>
-    </div>
+    </AuthPageShell>
   );
 }
 

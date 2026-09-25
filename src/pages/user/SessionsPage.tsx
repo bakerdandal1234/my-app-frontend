@@ -4,7 +4,7 @@ import { Button, Card } from '@heroui/react';
 import { motion, AnimatePresence, type Variants } from 'framer-motion';
 import { apiClient, refreshAccessToken } from '../../api/client';
 import { getAuthVersion, setAccessToken } from '../../api/tokenStore';
-import { getErrorMessage } from '../../api/errors';
+import { getErrorMessage, isAuthRejection } from '../../api/errors';
 import { useAuth } from '../../auth/AuthContext';
 import AnimatedBackground, {
   type AnimatedBackgroundBlob,
@@ -24,10 +24,6 @@ function formatDate(value?: string | null): string {
   return value ? new Date(value).toLocaleString() : '—';
 }
 // --- Motion Variants ---
-// containerVariants / itemVariants / errorVariants now come from the
-// shared ../../lib/motion-variants (consolidated from a near-identical
-// local copy with a barely perceptible timing/offset difference —
-// approved as part of the UI dedup pass).
 
 const sessionVariants: Variants = {
   hidden: {
@@ -108,10 +104,14 @@ function SessionsPage() {
       await loadSessions();
       if (version !== getAuthVersion()) return;
 
+      // Revoking may have ended this browser's own session, and a refresh
+      // tells us: if the server rejects it (401/403) we are signed out. Any
+      // other failure (network drop, 5xx) proves nothing, so stay signed in;
+      // the next authenticated request re-checks via the 401 interceptor.
       try {
         await refreshAccessToken();
-      } catch {
-        if (version === getAuthVersion()) {
+      } catch (refreshError: unknown) {
+        if (version === getAuthVersion() && isAuthRejection(refreshError)) {
           setAccessToken(null);
           navigate('/login');
         }

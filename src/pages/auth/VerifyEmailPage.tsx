@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Card, Spinner } from '@heroui/react';
 import { AnimatePresence, motion, type Variants } from 'framer-motion';
@@ -73,6 +73,7 @@ function VerifyEmailPage() {
 
   const [status, setStatus] = useState<Status>('loading');
   const [message, setMessage] = useState<string | null>(null);
+  const requestedTokenRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!token) {
@@ -81,7 +82,11 @@ function VerifyEmailPage() {
       return;
     }
 
-    let cancelled = false;
+    // The backend clears the token on first use, so a second request for the
+    // same token gets a 400. StrictMode (dev) runs effects twice, so send the
+    // request once per token and let its result through.
+    if (requestedTokenRef.current === token) return;
+    requestedTokenRef.current = token;
 
     (async () => {
       try {
@@ -90,7 +95,7 @@ function VerifyEmailPage() {
           { params: { token } },
         );
 
-        if (cancelled) return;
+        if (requestedTokenRef.current !== token) return;
 
         if (!isMessageResponse(res.data)) {
           throw new Error('Unexpected email verification response');
@@ -101,16 +106,12 @@ function VerifyEmailPage() {
           res.data.message ?? 'Your email has been verified.',
         );
       } catch (err: unknown) {
-        if (cancelled) return;
+        if (requestedTokenRef.current !== token) return;
 
         setStatus('error');
         setMessage(getErrorMessage(err));
       }
     })();
-
-    return () => {
-      cancelled = true;
-    };
   }, [token]);
 
   return (

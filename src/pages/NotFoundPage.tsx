@@ -76,7 +76,8 @@ const NOT_FOUND_BACKGROUND_BLOBS: AnimatedBackgroundBlob[] = [
 
 function NotFoundPage() {
   const { user } = useAuth();
-  console.log(user)
+  const homeHref = user ? '/home' : '/';
+
   return (
     <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-slate-950 px-4 text-white">
       <AnimatedBackground
@@ -117,8 +118,7 @@ function NotFoundPage() {
               variants={itemVariants}
               className="mt-7"
             >
-              <StatusLink
-                to='/home'>
+              <StatusLink to={homeHref}>
                 Back to home
               </StatusLink>
 

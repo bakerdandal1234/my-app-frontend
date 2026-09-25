@@ -59,8 +59,8 @@ export const errorVariants: Variants = {
 /**
  * "Status page" family — for single-outcome pages (email verification,
  * OAuth callback) rather than multi-field forms. Extracted from
- * VerifyEmailPage/OAuthCallbackPage/CustomerOAuthCallbackPage, where all
- * three defined the exact same values independently.
+ * VerifyEmailPage/OAuthCallbackPage, where both defined the exact same
+ * values independently.
  */
 
 /** Status card container: fades + rises in, staggering its children (no scale). */

@@ -90,13 +90,6 @@ export function isUserAccess(value: unknown): value is UserAccess {
   );
 }
 
-
-
-
-// C:/Users/b/Desktop/react/my-app-frontend/src/api/guards.ts
-// أضف التالي أسفل الكود الموجود.
-// نعيد استخدام isRecord وisOptionalText الموجودتين بالفعل.
-
 export interface AdminUser {
   id: string;
   email: string;
@@ -219,15 +212,6 @@ export function isSessionItem(value: unknown): value is SessionItem {
 export function isSessionItemArray(value: unknown): value is SessionItem[] {
   return Array.isArray(value) && value.every(isSessionItem);
 }
-
-
-
-
-
-// المرحلة الثالثة: فحص الاستجابات المتبقية ومعالجة أخطاء Axios.
-//
-// C:/Users/b/Desktop/react/my-app-frontend/src/api/guards.ts
-// أضف التالي، مع الاحتفاظ بكل الكود الموجود.
 
 export interface TwoFactorSetupResponse {
   qrCodeDataUrl: string;

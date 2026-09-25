@@ -5,10 +5,10 @@ import { statusItemVariants, statusIconVariants } from '../../lib/motion-variant
 
 /**
  * The "icon in a circle + title + description" header repeated verbatim
- * across VerifyEmailPage (success/error), OAuthCallbackPage (error) and
- * CustomerOAuthCallbackPage (2FA prompt/error) — five copies of the exact
- * same markup and motion, differing only in the icon, its circle color and
- * the text. Purely presentational: no auth logic lives here.
+ * across VerifyEmailPage (success/error) and OAuthCallbackPage (error) —
+ * three copies of the exact same markup and motion, differing only in the
+ * icon, its circle color and the text. Purely presentational: no auth
+ * logic lives here.
  */
 interface StatusIconHeaderProps {
   /** The icon itself, already sized/colored (an <svg> or a <Spinner />). */

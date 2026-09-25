@@ -1,22 +1,18 @@
-
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { Button, Card, Input, Label } from '@heroui/react';
+import { Button, Card } from '@heroui/react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { apiClient } from '../../api/client';
 import { getErrorMessage } from '../../api/errors';
-import AnimatedBackground from '../../components/layout/AnimatedBackground';
+import AuthPageShell from '../../components/layout/AuthPageShell';
 import GlassCard from '../../components/shared/GlassCard';
+import FormField from '../../components/shared/FormField';
+import FormErrorBanner from '../../components/shared/FormErrorBanner';
 import { containerVariants, itemVariants } from '../../lib/motion-variants';
-
-/** Mirrors the backend's CreateUserDto @Matches() rule. */
-const PASSWORD_RULE = /((?=.*\d)|(?=.*\W+))(?![.\n])(?=.*[A-Z])(?=.*[a-z]).*$/;
-
-const PASSWORD_MESSAGE =
-  'Password must be 8-128 characters and contain an uppercase letter, a lowercase letter, and a number or symbol.';
+import { passwordSchema } from '../../lib/validation';
 
 const registerSchema = z
   .object({
@@ -27,19 +23,17 @@ const registerSchema = z
 
     firstName: z
       .string()
-      .max(100, 'First name must be at most 100 characters.')
-      .min(3, 'First name is required.'),
+      .trim()
+      .min(1, 'First name is required.')
+      .max(100, 'First name must be at most 100 characters.'),
 
     lastName: z
       .string()
-      .max(100, 'Last name must be at most 100 characters.')
-      .min(3, 'Last name is required.'),
+      .trim()
+      .min(1, 'Last name is required.')
+      .max(100, 'Last name must be at most 100 characters.'),
 
-    password: z
-      .string()
-      .min(8, PASSWORD_MESSAGE)
-      .max(128, PASSWORD_MESSAGE)
-      .regex(PASSWORD_RULE, PASSWORD_MESSAGE),
+    password: passwordSchema,
 
     confirmPassword: z.string(),
   })
@@ -77,8 +71,10 @@ function RegisterPage() {
       await apiClient.post('/auth/register', {
         email: values.email,
         password: values.password,
-        ...(values.firstName ? { firstName: values.firstName } : {}),
-        ...(values.lastName ? { lastName: values.lastName } : {}),
+        // Both are required by CreateUserDto (@IsNotEmpty) and validated as
+        // non-empty above, so they are always sent — no conditional spread.
+        firstName: values.firstName,
+        lastName: values.lastName,
       });
 
       setRegisteredEmail(values.email);
@@ -88,9 +84,7 @@ function RegisterPage() {
   }
 
   return (
-    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-slate-950 px-4">
-      <AnimatedBackground />
-
+    <AuthPageShell>
       <AnimatePresence mode="wait">
         {registeredEmail ? (
           <motion.div
@@ -139,7 +133,7 @@ function RegisterPage() {
         ) : (
           <motion.form
             key="register-form"
-            onSubmit={handleSubmit(onSubmit,(errors)=>console.log('❌ ZOD FAILED:', errors))} 
+            onSubmit={handleSubmit(onSubmit)}
             className="w-full max-w-sm"
             variants={containerVariants}
             initial="hidden"
@@ -155,167 +149,56 @@ function RegisterPage() {
               </Card.Header>
 
               <Card.Content className="flex flex-col gap-4">
-                {apiError && (
-                  <motion.p
-                    initial={{
-                      opacity: 0,
-                      y: -10,
-                    }}
-                    animate={{
-                      opacity: 1,
-                      y: 0,
-                    }}
-                    className="rounded border border-red-500/30 bg-red-500/20 px-3 py-2 text-sm text-red-200"
-                    role="alert"
-                  >
-                    {apiError}
-                  </motion.p>
-                )}
+                <FormErrorBanner message={apiError} bannerKey="register-error" />
 
                 {/* Email */}
 
-                <motion.div
-                  variants={itemVariants}
-                  className="flex flex-col gap-1"
-                >
-                  <Label
-                    htmlFor="email"
-                    isInvalid={!!errors.email}
-                    className="text-slate-200"
-                  >
-                    Email
-                  </Label>
-
-                  <Input
-                    id="email"
-                    type="text"
-                    fullWidth
-                    {...register('email')}
-                  />
-
-                  {errors.email && (
-                    <p className="text-xs text-red-400">
-                      {errors.email.message}
-                    </p>
-                  )}
-                </motion.div>
+                <FormField
+                  id="email"
+                  label="Email"
+                  type="text"
+                  registration={register('email')}
+                  error={errors.email}
+                />
 
                 {/* First name / Last name */}
 
                 <div className="grid grid-cols-2 gap-3">
-                  <motion.div
-                    variants={itemVariants}
-                    className="flex flex-col gap-1"
-                  >
-                    <Label
-                      htmlFor="firstName"
-                      isInvalid={!!errors.firstName}
-                      className="text-slate-200"
-                    >
-                      First name
-                    </Label>
+                  <FormField
+                    id="firstName"
+                    label="First name"
+                    registration={register('firstName')}
+                    error={errors.firstName}
+                  />
 
-                    <Input
-                      id="firstName"
-                      type="text"
-                      fullWidth
-                      {...register('firstName')}
-                    />
-
-                    {errors.firstName && (
-                      <p className="text-xs text-red-400">
-                        {errors.firstName.message}
-                      </p>
-                    )}
-                  </motion.div>
-
-                  <motion.div
-                    variants={itemVariants}
-                    className="flex flex-col gap-1"
-                  >
-                    <Label
-                      htmlFor="lastName"
-                      isInvalid={!!errors.lastName}
-                      className="text-slate-200"
-                    >
-                      Last name
-                    </Label>
-
-                    <Input
-                      id="lastName"
-                      type="text"
-                      fullWidth
-                      {...register('lastName')}
-                    />
-
-                    {errors.lastName && (
-                      <p className="text-xs text-red-400">
-                        {errors.lastName.message}
-                      </p>
-                    )}
-                  </motion.div>
+                  <FormField
+                    id="lastName"
+                    label="Last name"
+                    registration={register('lastName')}
+                    error={errors.lastName}
+                  />
                 </div>
 
                 {/* Password */}
 
-                <motion.div
-                  variants={itemVariants}
-                  className="flex flex-col gap-1"
-                >
-                  <Label
-                    htmlFor="password"
-                    isInvalid={!!errors.password}
-                    className="text-slate-200"
-                  >
-                    Password
-                  </Label>
-
-                  <Input
-                    id="password"
-                    type="password"
-                    fullWidth
-                    {...register('password')}
-                  />
-
-                  <p className="text-xs text-slate-400">
-                    8+ characters, with uppercase, lowercase, and a number or
-                    symbol.
-                  </p>
-
-                  {errors.password && (
-                    <p className="text-xs text-red-400">
-                      {errors.password.message}
-                    </p>
-                  )}
-                </motion.div>
+                <FormField
+                  id="password"
+                  label="Password"
+                  type="password"
+                  registration={register('password')}
+                  error={errors.password}
+                  helperText="8+ characters, with uppercase, lowercase, and a number or symbol."
+                />
 
                 {/* Confirm password */}
 
-                <motion.div
-                  variants={itemVariants}
-                  className="flex flex-col gap-1"
-                >
-                  <Label
-                    htmlFor="confirmPassword"
-                    isInvalid={!!errors.confirmPassword}
-                    className="text-slate-200"
-                  >
-                    Confirm password
-                  </Label>
-
-                  <Input
-                    id="confirmPassword"
-                    type="password"
-                    fullWidth
-                    {...register('confirmPassword')}
-                  />
-
-                  {errors.confirmPassword && (
-                    <p className="text-xs text-red-400">
-                      {errors.confirmPassword.message}
-                    </p>
-                  )}
-                </motion.div>
+                <FormField
+                  id="confirmPassword"
+                  label="Confirm password"
+                  type="password"
+                  registration={register('confirmPassword')}
+                  error={errors.confirmPassword}
+                />
               </Card.Content>
 
               <Card.Footer className="flex flex-col gap-3">
@@ -357,9 +240,8 @@ function RegisterPage() {
           </motion.form>
         )}
       </AnimatePresence>
-    </div>
+    </AuthPageShell>
   );
 }
 
 export default RegisterPage;
-

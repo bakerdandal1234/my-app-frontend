@@ -13,27 +13,17 @@ import AnimatedBackground, {
 } from '../../components/layout/AnimatedBackground';
 import GlassCard from '../../components/shared/GlassCard';
 import { containerVariants, itemVariants, errorVariants } from '../../lib/motion-variants';
+import { twoFactorCodeSchema } from '../../lib/validation';
 import {
   isTwoFactorSetupResponse,
   type TwoFactorSetupResponse,
 } from '../../api/guards'
 /** Mirrors Verify2faDto (auth/dto/verify-2fa.dto.ts): @Length(6, 6). */
 const codeSchema = z.object({
-  code: z
-    .string()
-    .length(6, 'Enter the 6-digit code from your authenticator app.')
-    .regex(/^\d{6}$/, 'Enter the 6-digit code from your authenticator app.'),
+  code: twoFactorCodeSchema,
 });
 
 type CodeValues = z.infer<typeof codeSchema>;
-
-
-
-// --- Motion Variants ---
-// containerVariants / itemVariants / errorVariants now come from the
-// shared ../../lib/motion-variants (consolidated from a near-identical
-// local copy with a barely perceptible timing/offset difference —
-// approved as part of the UI dedup pass).
 
 const qrVariants: Variants = {
   hidden: {

@@ -7,6 +7,7 @@ import {
 } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { apiClient, refreshAccessToken } from '../api/client';
+import { isAuthRejection } from '../api/errors';
 import {
   getAccessToken,
   getAuthVersion,
@@ -21,9 +22,9 @@ import {
 /**
  * Widened as pages need more fields from GET /users/me. Now covers the
  * full set of non-excluded fields on the User entity (see backend
- * users/entities/user.entity.ts) needed by the Profile page (Phase 9) and
- * the 2FA page (Phase 8) — everything @Exclude()'d there (password,
- * tokens, lockout counters) never reaches this type in the first place.
+ * users/entities/user.entity.ts) needed by the Profile and 2FA pages —
+ * everything @Exclude()'d there (password, tokens, lockout counters)
+ * never reaches this type in the first place.
  */
 export type { AuthUser } from '../api/guards';
 
@@ -101,6 +102,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }
 
+  /**
+   * GET /users/me + GET /users/me/access, validated. Throws if a login or
+   * logout superseded `version` while the requests were in flight, so a
+   * caller never applies a stale session.
+   */
+  async function loadSession(
+    version: number,
+  ): Promise<{ user: AuthUser; access: AccessInfo }> {
+    const me = await apiClient.get<unknown>('/users/me');
+
+    if (version !== getAuthVersion()) {
+      throw new Error('Authentication was superseded');
+    }
+
+    if (!isAuthUser(me.data)) {
+      throw new Error('Unexpected user response');
+    }
+
+    const nextAccess = await loadAccess(me.data.id);
+
+    if (version !== getAuthVersion()) {
+      throw new Error('Authentication was superseded');
+    }
+
+    return { user: me.data, access: nextAccess };
+  }
+
   // On first mount: try to restore a session from the httpOnly
   // refresh_token cookie. The access token only ever lives in memory
   // (see tokenStore.ts), so it's gone after every full page reload —
@@ -113,21 +141,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       try {
         await refreshAccessToken();
         if (cancelled || restoreVersion !== getAuthVersion()) return;
-        const me = await apiClient.get<unknown>('/users/me');
-        if (cancelled || restoreVersion !== getAuthVersion()) return;
-        if (!isAuthUser(me.data)) {
-          throw new Error('Unexpected user response');
-        }
-        if (cancelled || restoreVersion !== getAuthVersion()) return;
 
-        const nextAccess = await loadAccess(me.data.id);
+        const session = await loadSession(restoreVersion);
+        if (cancelled) return;
 
-        if (cancelled || restoreVersion !== getAuthVersion()) return;
-
-        setUser(me.data);
-        setAccess(nextAccess);
-      } catch {
+        setUser(session.user);
+        setAccess(session.access);
+      } catch (error: unknown) {
         if (!cancelled && restoreVersion === getAuthVersion()) {
+          // 401/403 just means "no valid session" and is the normal first-visit
+          // case. Anything else (network drop, 5xx, unexpected response shape)
+          // also lands on the login screen, but leaves a trace. Log the message
+          // only: an AxiosError object carries the request headers.
+          if (!isAuthRejection(error)) {
+            console.error(
+              'Session restore failed:',
+              error instanceof Error ? error.message : 'unknown error',
+            );
+          }
           setAccessToken(null);
           setUser(null);
           setAccess(EMPTY_ACCESS);
@@ -151,24 +182,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const version = getAuthVersion();
 
     try {
-      const me = await apiClient.get<unknown>('/users/me');
+      const session = await loadSession(version);
 
-      if (version !== getAuthVersion()) {
-        throw new Error('Authentication was superseded');
-      }
-
-      if (!isAuthUser(me.data)) {
-        throw new Error('Unexpected user response');
-      }
-
-      const nextAccess = await loadAccess(me.data.id);
-
-      if (version !== getAuthVersion()) {
-        throw new Error('Authentication was superseded');
-      }
-
-      setUser(me.data);
-      setAccess(nextAccess);
+      setUser(session.user);
+      setAccess(session.access);
     } catch (error: unknown) {
       if (version === getAuthVersion()) {
         setAccessToken(null);

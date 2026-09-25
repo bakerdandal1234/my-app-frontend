@@ -3,13 +3,15 @@ import { Link } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { Button, Card, Input, Label } from '@heroui/react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { Button, Card } from '@heroui/react';
+import { motion } from 'framer-motion';
 import { apiClient } from '../../api/client';
 import { getErrorMessage } from '../../api/errors';
-import AnimatedBackground from '../../components/layout/AnimatedBackground';
+import AuthPageShell from '../../components/layout/AuthPageShell';
 import GlassCard from '../../components/shared/GlassCard';
-import { containerVariants, itemVariants, errorVariants } from '../../lib/motion-variants';
+import FormField from '../../components/shared/FormField';
+import FormErrorBanner from '../../components/shared/FormErrorBanner';
+import { containerVariants, itemVariants } from '../../lib/motion-variants';
 
 /** Mirrors ForgotPasswordDto (auth/dto/forgot-password.dto.ts). */
 const forgotPasswordSchema = z.object({
@@ -51,9 +53,7 @@ function ForgotPasswordPage() {
 
   if (submitted) {
     return (
-      <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-slate-950 px-4">
-        <AnimatedBackground />
-
+      <AuthPageShell>
         <motion.div
           className="w-full max-w-sm"
           variants={containerVariants}
@@ -102,14 +102,12 @@ function ForgotPasswordPage() {
             </Card.Footer>
           </GlassCard>
         </motion.div>
-      </div>
+      </AuthPageShell>
     );
   }
 
   return (
-    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-slate-950 px-4">
-      <AnimatedBackground />
-
+    <AuthPageShell>
       <motion.form
         onSubmit={handleSubmit(onSubmit)}
         className="w-full max-w-sm"
@@ -132,48 +130,16 @@ function ForgotPasswordPage() {
           </Card.Header>
 
           <Card.Content className="flex flex-col gap-4">
-            <AnimatePresence mode="wait">
-              {apiError && (
-                <motion.p
-                  key="forgot-password-error"
-                  variants={errorVariants}
-                  initial="hidden"
-                  animate="visible"
-                  exit="hidden"
-                  className="rounded border border-red-500/30 bg-red-500/20 px-3 py-2 text-sm text-red-200"
-                  role="alert"
-                >
-                  {apiError}
-                </motion.p>
-              )}
-            </AnimatePresence>
+            <FormErrorBanner message={apiError} bannerKey="forgot-password-error" />
 
-            <motion.div
-              variants={itemVariants}
-              className="flex flex-col gap-1"
-            >
-              <Label
-                htmlFor="email"
-                isInvalid={!!errors.email}
-                className="text-slate-200"
-              >
-                Email
-              </Label>
-
-              <Input
-                id="email"
-                type="email"
-                fullWidth
-                autoComplete="email"
-                {...register('email')}
-              />
-
-              {errors.email && (
-                <p className="text-xs text-red-400">
-                  {errors.email.message}
-                </p>
-              )}
-            </motion.div>
+            <FormField
+              id="email"
+              label="Email"
+              type="email"
+              autoComplete="email"
+              registration={register('email')}
+              error={errors.email}
+            />
           </Card.Content>
 
           <Card.Footer className="flex flex-col gap-3">
@@ -207,7 +173,7 @@ function ForgotPasswordPage() {
           </Card.Footer>
         </GlassCard>
       </motion.form>
-    </div>
+    </AuthPageShell>
   );
 }
 

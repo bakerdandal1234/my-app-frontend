@@ -37,7 +37,6 @@ export default function UserMenu({
     'User';
 
   const initial = displayName.charAt(0).toUpperCase();
-  console.log(user)
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {

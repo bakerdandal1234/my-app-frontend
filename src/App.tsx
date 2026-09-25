@@ -18,6 +18,7 @@ import RequirePermissionRoute from './auth/RequirePermissionRoute';
 import ChangePasswordPage from '././pages/user/ChangePasswordPage';
 import AuthenticatedLayout from './components/layout/AuthenticatedLayout';
 import LandingPage from './pages/LandingPage';
+import { PERMISSIONS } from './auth/permissions';
 function App() {
   return (
     <Routes>
@@ -29,20 +30,6 @@ function App() {
       <Route path="/reset-password" element={<ResetPasswordPage />} />
       <Route path="/oauth/callback" element={<OAuthCallbackPage />} />
 
-      {/*
-        Customer side (Google-only login), completely separate from the
-        staff routes above: its own provider, its own axios instance, its
-        own in-memory access token and its own cookies. Both sessions can
-        be held in the same browser at once without interfering.
-
-        /customer/oauth/callback is the ONLY redirect target the backend's
-        customer Google callback ever sends the browser to, and it sits
-        outside CustomerProtectedRoute because the visitor is not signed in
-        yet when they land on it.
-      */}
-   
-
-
       <Route element={<ProtectedRoute />}>
         <Route element={<AuthenticatedLayout />}>
           <Route path="/settings/2fa" element={<TwoFactorSetupPage />} />
@@ -51,12 +38,12 @@ function App() {
           <Route path="/sessions" element={<SessionsPage />} />
           <Route path="/home" element={<HomePage />} />
 
-          <Route element={<RequirePermissionRoute permission="roles:read" />}>
+          <Route element={<RequirePermissionRoute permission={PERMISSIONS.ROLES_READ} />}>
             <Route path="/admin/users" element={<AdminUsersPage />} />
             <Route path="/admin/roles" element={<AdminRolesPage />} />
           </Route>
 
-          <Route element={<RequirePermissionRoute permission="permissions:read" />}>
+          <Route element={<RequirePermissionRoute permission={PERMISSIONS.PERMISSIONS_READ} />}>
             <Route path="/admin/permissions" element={<AdminPermissionsPage />} />
           </Route>
         </Route>

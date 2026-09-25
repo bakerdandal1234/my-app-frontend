@@ -5,7 +5,7 @@ import { Card } from '@heroui/react';
  * The "glass" card look — a translucent frosted card on the dark FlowDesk
  * background — was copy-pasted as the exact same className string onto
  * HeroUI's <Card> across ~17 pages (auth forms, profile/security/sessions,
- * admin lists, status pages, both staff and customer). This wraps <Card>
+ * admin lists, status pages). This wraps <Card>
  * with that base style as the default so pages stop hand-carrying the
  * long className, while staying a plain <Card> under the hood — Card.Header,
  * Card.Title, Card.Description, Card.Content and Card.Footer are imported

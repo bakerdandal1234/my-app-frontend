@@ -7,6 +7,7 @@ import {
 } from './tokenStore';
 import { getCsrfToken } from './csrf';
 import { isAccessTokenResponse } from './guards';
+import { API_URL } from './config';
 declare module 'axios' {
   export interface AxiosRequestConfig {
     /** Keeps an old request from retrying with another session's credentials. */
@@ -17,8 +18,6 @@ declare module 'axios' {
     _isRefreshCall?: boolean;
   }
 }
-
-const API_URL = import.meta.env.VITE_API_URL as string;
 
 export const apiClient = axios.create({
   baseURL: API_URL,

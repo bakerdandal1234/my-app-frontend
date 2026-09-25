@@ -18,10 +18,11 @@ import {
   statusItemVariants as itemVariants,
 } from '../../lib/motion-variants';
 import { isAccessTokenResponse } from '../../api/guards';
+import { TWO_FACTOR_CODE_REGEX } from '../../lib/validation';
 // containerVariants / itemVariants now come from the shared
 // ../../lib/motion-variants (this "status page" family is also used by
-// VerifyEmailPage and CustomerOAuthCallbackPage). The matching
-// statusIconVariants is used inside StatusIconHeader.
+// VerifyEmailPage). The matching statusIconVariants is used inside
+// StatusIconHeader.
 
 const OAUTH_CALLBACK_BACKGROUND_WRAPPER_CLASSNAME =
   'pointer-events-none absolute inset-0 overflow-hidden';
@@ -56,7 +57,7 @@ const OAUTH_CALLBACK_BACKGROUND_PULSE_BLOB: AnimatedBackgroundPulseBlob = {
 /**
  * Lands here after the backend's Google/GitHub callback redirects to
  * FRONTEND_URL/oauth/callback?code=... (see backend README "OAuth"). Only
- * an opaque, short-lived, single-use code is in the URL — never an
+ * an opaque, short-lived (60 s) code is in the URL — never an
  * access/refresh token. The refresh_token/csrf_token cookies were already
  * set by that redirect, so this page's only job is exchanging the code for
  * an access token.
@@ -105,13 +106,13 @@ function OAuthCallbackPage() {
       cancelled = true;
     };
 
-    // establishSession/navigate are stable across renders (from context /
-    // react-router); only `code` actually changing should re-run this.
+    // establishSession/navigate are deliberately left out of the deps so
+    // that only a new `code` re-runs this request.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [code, needsTwoFactor]);
 
   async function submitTwoFactor(): Promise<void> {
-    if (isSubmitting || !/^\d{6}$/.test(twoFactorCode)) return;
+    if (isSubmitting || !TWO_FACTOR_CODE_REGEX.test(twoFactorCode)) return;
     setIsSubmitting(true);
     setError(null);
     try {

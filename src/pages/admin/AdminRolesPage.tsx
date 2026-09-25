@@ -1,9 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { z } from 'zod';
 import { motion, AnimatePresence, type Variants } from 'framer-motion';
-import { Button, Input } from '@heroui/react';
+import { Button } from '@heroui/react';
 import { useAuth } from '../../auth/AuthContext';
 import { apiClient } from '../../api/client';
 import { getErrorMessage } from '../../api/errors';
@@ -23,26 +22,10 @@ import {
   type RoleItem,
   type PermissionItem,
 } from '../../api/guards';
-
-
-
-/** Mirrors CreateRoleDto/UpdateRoleDto — name is lowercased/trimmed server-side. */
-const roleSchema = z.object({
-  name: z
-    .string()
-    .min(2, 'Name must be 2-50 characters.')
-    .max(50, 'Name must be 2-50 characters.'),
-  description: z
-    .string()
-    .max(255, 'Description must be at most 255 characters.')
-    .optional(),
-});
-
-type RoleFormValues = z.infer<typeof roleSchema>;
-
-function permissionLabel(permission: PermissionItem): string {
-  return `${permission.resource}:${permission.action}`;
-}
+import { PERMISSIONS, formatPermission } from '../../auth/permissions';
+import { roleSchema, type RoleFormValues } from './role-schema';
+import CreateRoleForm from './CreateRoleForm';
+import RoleRow from './RoleRow';
 
 // This page's containerVariants intentionally has no opacity step (see
 // ../../lib/motion-variants for the shared adminListContainerVariants used
@@ -56,10 +39,6 @@ const containerVariants: Variants = {
     },
   },
 };
-
-// itemVariants / errorVariants now come from the shared
-// ../../lib/motion-variants (this "admin list page" family is also used by
-// AdminUsersPage and AdminPermissionsPage).
 
 const ADMIN_ROLES_BACKGROUND_WRAPPER_CLASSNAME =
   'pointer-events-none absolute inset-0 overflow-hidden';
@@ -96,29 +75,21 @@ const ADMIN_ROLES_BACKGROUND_PULSE_BLOB: AnimatedBackgroundPulseBlob = {
 
 function AdminRolesPage() {
   const { hasPermission } = useAuth();
-  const canReadPermissions = hasPermission('permissions:read');
-  const [permissionsError, setPermissionsError] =
-    useState<string | null>(null);
+  const canReadPermissions = hasPermission(PERMISSIONS.PERMISSIONS_READ);
   const { showToast } = useToast();
 
   const [roles, setRoles] = useState<RoleItem[] | null>(null);
   const [permissions, setPermissions] = useState<PermissionItem[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [permissionsError, setPermissionsError] = useState<string | null>(
+    null,
+  );
 
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [editingRoleId, setEditingRoleId] = useState<string | null>(null);
   const [expandedRoleId, setExpandedRoleId] = useState<string | null>(null);
-  const [selectedPermissionId, setSelectedPermissionId] = useState('');
   const [isMutating, setIsMutating] = useState(false);
   const [rowError, setRowError] = useState<string | null>(null);
-
-  const createForm = useForm<RoleFormValues>({
-    resolver: zodResolver(roleSchema),
-    defaultValues: {
-      name: '',
-      description: '',
-    },
-  });
 
   const editForm = useForm<RoleFormValues>({
     resolver: zodResolver(roleSchema),
@@ -170,31 +141,30 @@ function AdminRolesPage() {
 
   useEffect(() => {
     void loadRolesAndPermissions();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [canReadPermissions]);
 
-  async function onCreateRole(values: RoleFormValues) {
+  async function onCreateRole(values: RoleFormValues): Promise<boolean> {
     setRowError(null);
 
     try {
       await apiClient.post('/authorization/roles', {
         name: values.name,
-        ...(values.description
-          ? { description: values.description }
-          : {}),
+        ...(values.description ? { description: values.description } : {}),
       });
 
-      createForm.reset();
       setShowCreateForm(false);
-
       await loadRolesAndPermissions();
+      showToast(`Role "${values.name}" created`);
 
-      showToast(`Role "${values.name.toLowerCase().trim()}" created`);
+      return true;
     } catch (err) {
       setRowError(getErrorMessage(err));
+      return false;
     }
   }
 
-  function startEditing(role: RoleItem) {
+  function startEditing(role: RoleItem): void {
     setEditingRoleId(role.id);
     setRowError(null);
 
@@ -204,7 +174,7 @@ function AdminRolesPage() {
     });
   }
 
-  async function onSaveEdit(values: RoleFormValues) {
+  async function onSaveEdit(values: RoleFormValues): Promise<void> {
     if (!editingRoleId) return;
 
     setRowError(null);
@@ -212,20 +182,18 @@ function AdminRolesPage() {
     try {
       await apiClient.patch(`/authorization/roles/${editingRoleId}`, {
         name: values.name,
-        description: values.description || "",
+        description: values.description || '',
       });
 
       setEditingRoleId(null);
-
       await loadRolesAndPermissions();
-
       showToast('Role updated');
     } catch (err) {
       setRowError(getErrorMessage(err));
     }
   }
 
-  async function handleDeleteRole(role: RoleItem) {
+  async function handleDeleteRole(role: RoleItem): Promise<void> {
     if (
       !window.confirm(
         `Delete role "${role.name}"? This also removes it from every user who has it.`,
@@ -240,49 +208,41 @@ function AdminRolesPage() {
       await apiClient.delete(`/authorization/roles/${role.id}`);
 
       await loadRolesAndPermissions();
-
       showToast(`Role "${role.name}" deleted`);
     } catch (err) {
       setRowError(getErrorMessage(err));
     }
   }
 
-  function toggleExpand(roleId: string) {
-    setExpandedRoleId(
-      expandedRoleId === roleId ? null : roleId,
-    );
-
-    setSelectedPermissionId('');
+  function toggleExpand(roleId: string): void {
+    setExpandedRoleId((current) => (current === roleId ? null : roleId));
     setRowError(null);
   }
 
-  async function handleAssignPermission(roleId: string) {
-    if (!selectedPermissionId) return;
-
-    const permission = permissions.find(
-      (item) => item.id === selectedPermissionId,
-    );
+  async function handleAssignPermission(
+    roleId: string,
+    permissionId: string,
+  ): Promise<boolean> {
+    const permission = permissions.find((item) => item.id === permissionId);
 
     setIsMutating(true);
     setRowError(null);
 
     try {
       await apiClient.post(
-        `/authorization/roles/${roleId}/permissions/${selectedPermissionId}`,
+        `/authorization/roles/${roleId}/permissions/${permissionId}`,
       );
-
-      setSelectedPermissionId('');
 
       await loadRolesAndPermissions();
 
       showToast(
-        `Assigned "${permission
-          ? permissionLabel(permission)
-          : 'permission'
-        }"`,
+        `Assigned "${permission ? formatPermission(permission) : 'permission'}"`,
       );
+
+      return true;
     } catch (err) {
       setRowError(getErrorMessage(err));
+      return false;
     } finally {
       setIsMutating(false);
     }
@@ -292,7 +252,7 @@ function AdminRolesPage() {
     roleId: string,
     permissionId: string,
     label: string,
-  ) {
+  ): Promise<void> {
     setIsMutating(true);
     setRowError(null);
 
@@ -302,7 +262,6 @@ function AdminRolesPage() {
       );
 
       await loadRolesAndPermissions();
-
       showToast(`Removed "${label}"`);
     } catch (err) {
       setRowError(getErrorMessage(err));
@@ -333,9 +292,7 @@ function AdminRolesPage() {
           <div>
             <div className="mb-2 flex items-center gap-3">
               <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-600/20 ring-1 ring-indigo-400/20">
-                <span className="text-lg font-bold text-indigo-300">
-                  F
-                </span>
+                <span className="text-lg font-bold text-indigo-300">F</span>
               </div>
 
               <div>
@@ -350,8 +307,8 @@ function AdminRolesPage() {
             </div>
 
             <p className="max-w-xl text-sm text-slate-400">
-              Manage application roles and control which permissions
-              each role can access.
+              Manage application roles and control which permissions each
+              role can access.
             </p>
           </div>
         </motion.header>
@@ -368,17 +325,15 @@ function AdminRolesPage() {
                   </h2>
 
                   <p className="mt-1 text-sm text-slate-400">
-                    Create roles, update them, or manage their
-                    assigned permissions.
+                    Create roles, update them, or manage their assigned
+                    permissions.
                   </p>
                 </div>
 
                 <Button
                   type="button"
                   variant="primary"
-                  onPress={() =>
-                    setShowCreateForm((value) => !value)
-                  }
+                  onPress={() => setShowCreateForm((value) => !value)}
                   className="bg-indigo-600 text-white hover:bg-indigo-500"
                 >
                   {showCreateForm ? 'Cancel' : '+ New role'}
@@ -417,109 +372,7 @@ function AdminRolesPage() {
               </AnimatePresence>
 
               {/* Create Role */}
-              <AnimatePresence>
-                {showCreateForm && (
-                  <motion.form
-                    initial={{
-                      opacity: 0,
-                      height: 0,
-                      y: -10,
-                    }}
-                    animate={{
-                      opacity: 1,
-                      height: 'auto',
-                      y: 0,
-                    }}
-                    exit={{
-                      opacity: 0,
-                      height: 0,
-                      y: -10,
-                    }}
-                    transition={{ duration: 0.3 }}
-                    onSubmit={createForm.handleSubmit(onCreateRole)}
-                    className="mb-6 overflow-hidden"
-                  >
-                    <div className="rounded-xl border border-white/10 bg-slate-900/60 p-4">
-                      <div className="mb-4">
-                        <h3 className="text-sm font-semibold text-white">
-                          Create new role
-                        </h3>
-
-                        <p className="mt-1 text-xs text-slate-400">
-                          Role names are normalized by the server.
-                        </p>
-                      </div>
-
-                      <div className="grid gap-4 sm:grid-cols-2">
-                        <div>
-                          <label
-                            htmlFor="create-role-name"
-                            className="mb-2 block text-sm font-medium text-slate-200"
-                          >
-                            Name
-                          </label>
-
-                          <Input
-                            id="create-role-name"
-                            placeholder="e.g. manager"
-                            {...createForm.register('name')}
-                            className="text-black"
-                          />
-
-                          {createForm.formState.errors.name && (
-                            <p className="mt-1.5 text-xs text-red-300">
-                              {
-                                createForm.formState.errors.name
-                                  .message
-                              }
-                            </p>
-                          )}
-                        </div>
-
-                        <div>
-                          <label
-                            htmlFor="create-role-description"
-                            className="mb-2 block text-sm font-medium text-slate-200"
-                          >
-                            Description
-                          </label>
-
-                          <Input
-                            id="create-role-description"
-                            placeholder="Optional description"
-                            {...createForm.register('description')}
-                            className="text-black"
-                          />
-
-                          {createForm.formState.errors.description && (
-                            <p className="mt-1.5 text-xs text-red-300">
-                              {
-                                createForm.formState.errors
-                                  .description?.message
-                              }
-                            </p>
-                          )}
-                        </div>
-                      </div>
-
-                      <div className="mt-4 flex justify-end">
-                        <Button
-                          type="submit"
-                          variant="primary"
-                          isDisabled={
-                            createForm.formState.isSubmitting
-                          }
-                          className="bg-indigo-600 text-white hover:bg-indigo-500"
-                        >
-                          {createForm.formState.isSubmitting
-                            ? 'Creating…'
-                            : 'Create role'}
-                        </Button>
-                      </div>
-                    </div>
-                  </motion.form>
-                )}
-              </AnimatePresence>
+              <CreateRoleForm show={showCreateForm} onCreate={onCreateRole} />
 
               {/* Loading */}
               {roles === null && !error && (
@@ -538,7 +391,6 @@ function AdminRolesPage() {
                       }}
                       className="h-5 w-5 rounded-full border-2 border-indigo-400/30 border-t-indigo-400"
                     />
-
                     Loading roles…
                   </div>
                 </motion.div>
@@ -560,8 +412,7 @@ function AdminRolesPage() {
                   </h3>
 
                   <p className="mt-1 text-sm text-slate-400">
-                    Create your first role to start managing
-                    permissions.
+                    Create your first role to start managing permissions.
                   </p>
                 </motion.div>
               )}
@@ -569,341 +420,24 @@ function AdminRolesPage() {
               {/* Roles */}
               {roles && roles.length > 0 && (
                 <div className="space-y-3">
-                  {roles.map((role) => {
-                    const assignedIds = new Set(
-                      role.rolePermissions.map(
-                        (rolePermission) =>
-                          rolePermission.permissionId,
-                      ),
-                    );
-
-                    const assignablePermissions =
-                      permissions.filter(
-                        (permission) =>
-                          !assignedIds.has(permission.id),
-                      );
-
-                    const isExpanded =
-                      expandedRoleId === role.id;
-
-                    return (
-                      <motion.div
-                        key={role.id}
-                        variants={itemVariants}
-                        layout
-                        className="overflow-hidden rounded-xl border border-white/10 bg-white/5 transition-colors hover:bg-white/[0.07]"
-                      >
-                        {/* Role Row */}
-                        {editingRoleId === role.id ? (
-                          <form
-                            onSubmit={editForm.handleSubmit(
-                              onSaveEdit,
-                            )}
-                            className="p-4"
-                          >
-                            <div className="grid gap-4 sm:grid-cols-2">
-                              <div>
-                                <label
-                                  htmlFor={`edit-role-name-${role.id}`}
-                                  className="mb-2 block text-sm font-medium text-slate-200"
-                                >
-                                  Role name
-                                </label>
-
-                                <Input
-                                  id={`edit-role-name-${role.id}`}
-                                  {...editForm.register('name')}
-                                  className="text-black"
-                                />
-
-                                {editForm.formState.errors.name && (
-                                  <p className="mt-1.5 text-xs text-red-300">
-                                    {
-                                      editForm.formState.errors
-                                        .name.message
-                                    }
-                                  </p>
-                                )}
-                              </div>
-
-                              <div>
-                                <label
-                                  htmlFor={`edit-role-description-${role.id}`}
-                                  className="mb-2 block text-sm font-medium text-slate-200"
-                                >
-                                  Description
-                                </label>
-
-                                <Input
-                                  id={`edit-role-description-${role.id}`}
-                                  {...editForm.register(
-                                    'description',
-                                  )}
-                                  className="text-black"
-                                />
-                              </div>
-                            </div>
-
-                            <div className="mt-4 flex flex-wrap justify-end gap-2">
-                              <Button
-                                type="submit"
-                                variant="primary"
-                                isDisabled={
-                                  editForm.formState.isSubmitting
-                                }
-                                className="bg-indigo-600 text-white hover:bg-indigo-500"
-                              >
-                                {editForm.formState.isSubmitting
-                                  ? 'Saving…'
-                                  : 'Save'}
-                              </Button>
-
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                onPress={() =>
-                                  setEditingRoleId(null)
-                                }
-                                className="text-slate-300 hover:bg-white/10 hover:text-white"
-                              >
-                                Cancel
-                              </Button>
-                            </div>
-                          </form>
-                        ) : (
-                          <div className="flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:justify-between">
-                            <button
-                              type="button"
-                              onClick={() =>
-                                toggleExpand(role.id)
-                              }
-                              className="min-w-0 text-left"
-                            >
-                              <div className="flex items-center gap-3">
-                                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-indigo-500/10 text-sm font-semibold text-indigo-300 ring-1 ring-indigo-400/10">
-                                  {role.name
-                                    .slice(0, 1)
-                                    .toUpperCase()}
-                                </div>
-
-                                <div className="min-w-0">
-                                  <p className="truncate text-sm font-semibold text-white">
-                                    {role.name}
-                                  </p>
-
-                                  <p className="mt-0.5 truncate text-xs text-slate-400">
-                                    {role.description ||
-                                      'No description'}
-                                  </p>
-                                </div>
-                              </div>
-                            </button>
-
-                            <div className="flex flex-wrap items-center gap-2">
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  toggleExpand(role.id)
-                                }
-                                className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs font-medium text-indigo-300 transition-colors hover:bg-indigo-500/10 hover:text-indigo-200"
-                              >
-                                {isExpanded
-                                  ? 'Hide permissions'
-                                  : 'Manage permissions'}
-                              </button>
-
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  startEditing(role)
-                                }
-                                className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs font-medium text-slate-300 transition-colors hover:bg-white/10 hover:text-white"
-                              >
-                                Edit
-                              </button>
-
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  handleDeleteRole(role)
-                                }
-                                className="rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs font-medium text-red-300 transition-colors hover:bg-red-500/20 hover:text-red-200"
-                              >
-                                Delete
-                              </button>
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Permissions Panel */}
-                        <AnimatePresence initial={false}>
-                          {isExpanded && (
-                            <motion.div
-                              initial={{
-                                opacity: 0,
-                                height: 0,
-                              }}
-                              animate={{
-                                opacity: 1,
-                                height: 'auto',
-                              }}
-                              exit={{
-                                opacity: 0,
-                                height: 0,
-                              }}
-                              transition={{ duration: 0.25 }}
-                              className="overflow-hidden"
-                            >
-                              <div className="border-t border-white/10 bg-slate-950/40 p-4">
-                                <div className="mb-4">
-                                  <h3 className="text-sm font-semibold text-white">
-                                    Assigned permissions
-                                  </h3>
-
-                                  <p className="mt-1 text-xs text-slate-400">
-                                    Manage the permissions available
-                                    to this role.
-                                  </p>
-                                </div>
-
-                                {/* Assigned permissions */}
-                                <div className="flex flex-wrap gap-2">
-                                  {role.rolePermissions.length ===
-                                    0 && (
-                                      <span className="rounded-lg border border-dashed border-white/10 bg-white/5 px-3 py-2 text-xs text-slate-500">
-                                        No permissions assigned.
-                                      </span>
-                                    )}
-
-                                  {role.rolePermissions.map(
-                                    (rolePermission) => {
-                                      const label =
-                                        permissionLabel(
-                                          rolePermission.permission,
-                                        );
-
-                                      return (
-                                        <motion.span
-                                          key={
-                                            rolePermission.permissionId
-                                          }
-                                          initial={{
-                                            opacity: 0,
-                                            scale: 0.9,
-                                          }}
-                                          animate={{
-                                            opacity: 1,
-                                            scale: 1,
-                                          }}
-                                          className="inline-flex items-center gap-1 rounded-full border border-indigo-400/20 bg-indigo-500/10 px-3 py-1.5 text-xs font-medium text-indigo-200"
-                                        >
-                                          {label}
-
-                                          <button
-                                            type="button"
-                                            onClick={() =>
-                                              handleRemovePermission(
-                                                role.id,
-                                                rolePermission.permissionId,
-                                                label,
-                                              )
-                                            }
-                                            disabled={isMutating}
-                                            aria-label={`Remove ${label}`}
-                                            className="-mr-1 rounded-full p-1 text-indigo-300 transition-colors hover:bg-indigo-400/20 hover:text-white disabled:opacity-50"
-                                          >
-                                            ×
-                                          </button>
-                                        </motion.span>
-                                      );
-                                    },
-                                  )}
-                                </div>
-            
-                                {/* Assign permission */}
-                                {assignablePermissions.length >
-                                  0 && (
-                                    <div className="mt-5 rounded-xl border border-white/10 bg-white/5 p-3">
-                                      <div className="mb-3">
-                                        <p className="text-xs font-medium text-slate-300">
-                                          Add permission
-                                        </p>
-
-                                        <p className="mt-1 text-xs text-slate-500">
-                                          Select a permission that is
-                                          not already assigned.
-                                        </p>
-                                      </div>
-
-                                      <div className="flex flex-col gap-2 sm:flex-row">
-                                        <select
-                                          value={
-                                            selectedPermissionId
-                                          }
-                                          onChange={(event) =>
-                                            setSelectedPermissionId(
-                                              event.target.value,
-                                            )
-                                          }
-                                          className="min-h-10 flex-1 rounded-lg border border-white/10 bg-slate-900 px-3 text-sm text-slate-200 outline-none transition focus:border-indigo-400/50 focus:ring-2 focus:ring-indigo-500/20"
-                                        >
-                                          <option value="">
-                                            Add a permission…
-                                          </option>
-
-                                          {assignablePermissions.map(
-                                            (permission) => (
-                                              <option
-                                                key={permission.id}
-                                                value={permission.id}
-                                              >
-                                                {permissionLabel(
-                                                  permission,
-                                                )}
-                                              </option>
-                                            ),
-                                          )}
-                                        </select>
-
-                                        <Button
-                                          type="button"
-                                          variant="primary"
-                                          onPress={() =>
-                                            handleAssignPermission(
-                                              role.id,
-                                            )
-                                          }
-                                          isDisabled={
-                                            !selectedPermissionId ||
-                                            isMutating
-                                          }
-                                          className="bg-indigo-600 text-white hover:bg-indigo-500"
-                                        >
-                                          {isMutating
-                                            ? 'Assigning…'
-                                            : 'Assign'}
-                                        </Button>
-                                      </div>
-                                    </div>
-                                  )}
-
-                                {assignablePermissions.length ===
-                                  0 &&
-                                  permissions.length > 0 && (
-                                    <div className="mt-5 rounded-lg border border-emerald-500/10 bg-emerald-500/5 px-3 py-2">
-                                      <p className="text-xs text-emerald-300">
-                                        All available permissions are
-                                        assigned to this role.
-                                      </p>
-                                    </div>
-                                  )}
-                              </div>
-                            </motion.div>
-                          )}
-                        </AnimatePresence>
-                      </motion.div>
-                    );
-                  })}
+                  {roles.map((role) => (
+                    <RoleRow
+                      key={role.id}
+                      role={role}
+                      permissions={permissions}
+                      isEditing={editingRoleId === role.id}
+                      isExpanded={expandedRoleId === role.id}
+                      isMutating={isMutating}
+                      editForm={editForm}
+                      onStartEdit={() => startEditing(role)}
+                      onCancelEdit={() => setEditingRoleId(null)}
+                      onSaveEdit={onSaveEdit}
+                      onDelete={() => handleDeleteRole(role)}
+                      onToggleExpand={() => toggleExpand(role.id)}
+                      onAssignPermission={handleAssignPermission}
+                      onRemovePermission={handleRemovePermission}
+                    />
+                  ))}
                 </div>
               )}
             </div>
