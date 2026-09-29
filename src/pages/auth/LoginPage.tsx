@@ -1,48 +1,53 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { Button, Card } from '@heroui/react';
-import { buttonVariants } from '@heroui/styles';
 import { motion } from 'framer-motion';
-import { apiClient } from '../../api/client';
-import { API_URL } from '../../api/config';
 import { getErrorMessage } from '../../api/errors';
+import { getAuthVersion, subscribeToAccessToken } from '../../api/tokenStore';
 import { useAuth } from '../../auth/AuthContext';
+import {
+  login,
+  startUserGoogleLogin,
+  startUserGithubLogin,
+} from '../../auth/api';
 import AuthPageShell from '../../components/layout/AuthPageShell';
 import GlassCard from '../../components/shared/GlassCard';
 import FormField from '../../components/shared/FormField';
 import FormErrorBanner from '../../components/shared/FormErrorBanner';
+import TwoFactorChallengeForm from '../../components/shared/TwoFactorChallengeForm';
 import { containerVariants, itemVariants } from '../../lib/motion-variants';
-import { twoFactorCodeSchema } from '../../lib/validation';
 import {
-  isAccessTokenResponse,
-  isTwoFactorRequiredResponse,
-} from '../../api/guards';
+  emailSchema,
+  loginPasswordSchema,
+} from '../../lib/validation';
 
-/** Mirrors LoginDto (auth/dto/login.dto.ts): email + password required. */
 const credentialsSchema = z.object({
-  email: z
-    .string()
-    .min(1, 'Email is required.')
-    .email('Please enter a valid email address.'),
-
-  password: z.string().min(1, 'Password is required.'),
+  email: emailSchema,
+  password: loginPasswordSchema,
 });
 
 type CredentialsValues = z.infer<typeof credentialsSchema>;
 
-/** Mirrors LoginDto's optional twoFactorCode: @Length(6, 6). */
-const twoFactorSchema = z.object({
-  twoFactorCode: twoFactorCodeSchema,
-});
+interface LoginOperation {
+  version: number;
+  active: boolean;
+  submitting: boolean;
+  awaitingTwoFactor: boolean;
+  expectedToken: string | null;
+}
 
-type TwoFactorValues = z.infer<typeof twoFactorSchema>;
+function isCurrentOperation(operation: LoginOperation, current: LoginOperation | null): boolean {
+  return operation === current && operation.active && operation.version === getAuthVersion();
+}
 
 function LoginPage() {
   const navigate = useNavigate();
-  const { establishSession } = useAuth();
+  const { establishSession, isLoading } = useAuth();
+  const mounted = useRef(false);
+  const activeOperation = useRef<LoginOperation | null>(null);
 
   // Held only in memory, only for the duration of the 2FA step.
   const [pendingCredentials, setPendingCredentials] =
@@ -60,164 +65,121 @@ function LoginPage() {
     },
   });
 
-  const twoFactorForm = useForm<TwoFactorValues>({
-    resolver: zodResolver(twoFactorSchema),
+  useEffect(() => {
+    mounted.current = true;
+    const unsubscribe = subscribeToAccessToken((token) => {
+      const operation = activeOperation.current;
+      const version = getAuthVersion();
+      if (!operation?.active || operation.version === version) return;
 
-    defaultValues: {
-      twoFactorCode: '',
-    },
-  });
+      // Only our own synchronous publication may advance this operation.
+      if (operation.expectedToken !== null && token === operation.expectedToken && version === operation.version + 1) {
+        operation.version = version;
+        operation.expectedToken = null;
+        return;
+      }
 
-  async function completeLogin(
-    email: string,
-    password: string,
-    twoFactorCode?: string,
-  ) {
-    const response = await apiClient.post<unknown>('/auth/login', {
-      email,
-      password,
-      ...(twoFactorCode ? { twoFactorCode } : {}),
+      operation.active = false;
+      activeOperation.current = null;
+      setPendingCredentials(null);
+      setApiError('Your session changed. Please start signing in again.');
     });
 
-    if (isTwoFactorRequiredResponse(response.data)) {
-      setPendingCredentials({ email, password });
-      return;
-    }
+    return () => {
+      mounted.current = false;
+      if (activeOperation.current) activeOperation.current.active = false;
+      activeOperation.current = null;
+      unsubscribe();
+    };
+  }, []);
 
-    if (!isAccessTokenResponse(response.data)) {
-      throw new Error('Unexpected login response');
-    }
-
-    await establishSession(response.data.accessToken);
-    navigate('/home');
-  }
-
-  async function onSubmitCredentials(values: CredentialsValues) {
+  async function completeLogin(
+    operation: LoginOperation,
+    credentials: CredentialsValues,
+    twoFactorCode?: string,
+  ): Promise<void> {
+    operation.submitting = true;
     setApiError(null);
 
     try {
-      await completeLogin(values.email, values.password);
-    } catch (err) {
+      const response = await login({ ...credentials, twoFactorCode });
+      if (!isCurrentOperation(operation, activeOperation.current)) return;
+
+      if (response.twoFactorRequired === true) {
+        operation.awaitingTwoFactor = true;
+        setPendingCredentials(credentials);
+        return;
+      }
+
+      operation.expectedToken = response.accessToken;
+      const establishing = establishSession(response.accessToken);
+      operation.expectedToken = null;
+      await establishing;
+      if (!isCurrentOperation(operation, activeOperation.current)) return;
+
+      operation.active = false;
+      activeOperation.current = null;
+      setPendingCredentials(null);
+      navigate('/home');
+    } catch (err: unknown) {
+      if (!isCurrentOperation(operation, activeOperation.current)) return;
       setApiError(getErrorMessage(err));
+      if (!operation.awaitingTwoFactor) {
+        operation.active = false;
+        activeOperation.current = null;
+      }
+    } finally {
+      operation.expectedToken = null;
+      operation.submitting = false;
     }
   }
 
-  async function onSubmitTwoFactor(values: TwoFactorValues) {
-    if (!pendingCredentials) return;
+  async function onSubmitCredentials(values: CredentialsValues): Promise<void> {
+    if (!mounted.current || isLoading || activeOperation.current?.submitting) return;
+    if (activeOperation.current) activeOperation.current.active = false;
 
-    setApiError(null);
+    const operation: LoginOperation = {
+      version: getAuthVersion(),
+      active: true,
+      submitting: false,
+      awaitingTwoFactor: false,
+      expectedToken: null,
+    };
+    activeOperation.current = operation;
+    await completeLogin(operation, values);
+  }
 
-    try {
-      await completeLogin(
-        pendingCredentials.email,
-        pendingCredentials.password,
-        values.twoFactorCode,
-      );
-    } catch (err) {
-      setApiError(getErrorMessage(err));
-    }
+  async function onSubmitTwoFactor(code: string): Promise<void> {
+    const operation = activeOperation.current;
+    if (!mounted.current || isLoading || !operation || !pendingCredentials || operation.submitting) return;
+    if (!isCurrentOperation(operation, activeOperation.current)) return;
+    await completeLogin(operation, pendingCredentials, code);
   }
 
   function backToCredentials() {
+    if (activeOperation.current) activeOperation.current.active = false;
+    activeOperation.current = null;
     setPendingCredentials(null);
     setApiError(null);
-    twoFactorForm.reset();
   }
-
-  /*
-   * --------------------------------------------------------------------------
-   * 2FA STEP
-   * --------------------------------------------------------------------------
-   */
 
   if (pendingCredentials) {
     return (
       <AuthPageShell>
-        <motion.form
-          onSubmit={twoFactorForm.handleSubmit(onSubmitTwoFactor)}
-          className="w-full max-w-sm"
-          variants={containerVariants}
-          initial="hidden"
-          animate="visible"
-        >
-          <GlassCard>
-            <Card.Header>
-              <motion.div variants={itemVariants}>
-                <Card.Title className="text-white">
-                  Two-factor authentication
-                </Card.Title>
-
-                <Card.Description className="text-slate-400">
-                  Enter the 6-digit code from your authenticator app.
-                </Card.Description>
-              </motion.div>
-            </Card.Header>
-
-            <Card.Content className="flex flex-col gap-4">
-              <FormErrorBanner message={apiError} bannerKey="two-factor-error" />
-
-              <FormField
-                id="twoFactorCode"
-                label="Authentication code"
-                inputMode="numeric"
-                autoComplete="one-time-code"
-                maxLength={6}
-                inputClassName="tracking-widest"
-                registration={twoFactorForm.register('twoFactorCode')}
-                error={twoFactorForm.formState.errors.twoFactorCode}
-              />
-            </Card.Content>
-
-            <Card.Footer className="flex flex-col gap-3">
-              <motion.div
-                variants={itemVariants}
-                className="w-full"
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
-              >
-                <Button
-                  type="submit"
-                  fullWidth
-                  isPending={twoFactorForm.formState.isSubmitting}
-                >
-                  {twoFactorForm.formState.isSubmitting
-                    ? 'Verifying…'
-                    : 'Verify'}
-                </Button>
-              </motion.div>
-
-              <motion.div
-                variants={itemVariants}
-                className="w-full"
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
-              >
-                <Button
-                  type="button"
-                  variant="ghost"
-                  fullWidth
-                  onPress={backToCredentials}
-                >
-                  Use a different account
-                </Button>
-              </motion.div>
-            </Card.Footer>
-          </GlassCard>
-        </motion.form>
+        <TwoFactorChallengeForm
+          error={apiError}
+          onSubmit={onSubmitTwoFactor}
+          onCancel={backToCredentials}
+        />
       </AuthPageShell>
     );
   }
-
-  /*
-   * --------------------------------------------------------------------------
-   * LOGIN STEP
-   * --------------------------------------------------------------------------
-   */
 
   return (
     <AuthPageShell>
       <motion.form
         onSubmit={credentialsForm.handleSubmit(onSubmitCredentials)}
+        noValidate
         className="w-full max-w-sm"
         variants={containerVariants}
         initial="hidden"
@@ -239,6 +201,7 @@ function LoginPage() {
               id="email"
               label="Email"
               type="email"
+              autoComplete="email"
               registration={credentialsForm.register('email')}
               error={credentialsForm.formState.errors.email}
             />
@@ -247,6 +210,7 @@ function LoginPage() {
               id="password"
               label="Password"
               type="password"
+              autoComplete="current-password"
               registration={credentialsForm.register('password')}
               error={credentialsForm.formState.errors.password}
             />
@@ -279,6 +243,7 @@ function LoginPage() {
                 type="submit"
                 fullWidth
                 isPending={credentialsForm.formState.isSubmitting}
+                isDisabled={isLoading || credentialsForm.formState.isSubmitting}
               >
                 {credentialsForm.formState.isSubmitting
                   ? 'Logging in…'
@@ -287,7 +252,7 @@ function LoginPage() {
             </motion.div>
 
             {/* Divider */}
-
+            
             <motion.div
               variants={itemVariants}
               className="flex w-full items-center gap-3"
@@ -301,26 +266,22 @@ function LoginPage() {
               <div className="h-px flex-1 bg-white/10" />
             </motion.div>
 
-            {/* Google */}
-
             <motion.div
               variants={itemVariants}
               className="w-full"
               whileHover={{ scale: 1.02 }}
               whileTap={{ scale: 0.98 }}
             >
-              <a
-                href={`${API_URL}/auth/google`}
-                className={buttonVariants({
-                  variant: 'danger',
-                  fullWidth: true,
-                })}
+              <Button
+                type="button"
+                variant="danger"
+                fullWidth
+                onPress={startUserGoogleLogin}
+                isDisabled={credentialsForm.formState.isSubmitting}
               >
                 Continue with Google
-              </a>
+              </Button>
             </motion.div>
-
-            {/* GitHub */}
 
             <motion.div
               variants={itemVariants}
@@ -328,15 +289,15 @@ function LoginPage() {
               whileHover={{ scale: 1.02 }}
               whileTap={{ scale: 0.98 }}
             >
-              <a
-                href={`${API_URL}/auth/github`}
-                className={buttonVariants({
-                  variant: 'danger',
-                  fullWidth: true,
-                })}
+              <Button
+                type="button"
+                variant="danger"
+                fullWidth
+                onPress={startUserGithubLogin}
+                isDisabled={credentialsForm.formState.isSubmitting}
               >
                 Continue with GitHub
-              </a>
+              </Button>
             </motion.div>
 
             {/* Register */}

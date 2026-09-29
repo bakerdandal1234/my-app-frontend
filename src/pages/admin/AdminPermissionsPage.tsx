@@ -1,11 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { z } from 'zod';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Button, Input } from '@heroui/react';
+import { Button } from '@heroui/react';
 
-import { apiClient } from '../../api/client';
+import { getPermissions, createPermission, updatePermission, deletePermission } from '../../auth/authorization-api';
+import { getAuthVersion, subscribeToAccessToken } from '../../api/tokenStore';
 import { getErrorMessage } from '../../api/errors';
 import { useToast } from '../../ui/ToastContext';
 import AnimatedBackground, {
@@ -17,29 +17,11 @@ import {
   adminListItemVariants as itemVariants,
   adminListErrorVariants as errorVariants,
 } from '../../lib/motion-variants';
-import {
-  isPermissionItemArray,
-  type PermissionItem,
-} from '../../api/guards';
+import type { PermissionItem } from '../../auth/authorization-contracts';
 import { formatPermission } from '../../auth/permissions';
-
-/** Mirrors CreatePermissionDto/UpdatePermissionDto. */
-const permissionSchema = z.object({
-  resource: z
-    .string()
-    .min(2, 'Resource must be 2-100 characters.')
-    .max(100, 'Resource must be 2-100 characters.'),
-  action: z
-    .string()
-    .min(2, 'Action must be 2-50 characters.')
-    .max(50, 'Action must be 2-50 characters.'),
-  description: z
-    .string()
-    .max(255, 'Description must be at most 255 characters.')
-    .optional(),
-});
-
-type PermissionFormValues = z.infer<typeof permissionSchema>;
+import { permissionSchema, type PermissionFormValues } from './permission-schema';
+import CreatePermissionForm from './CreatePermissionForm';
+import PermissionRow from './PermissionRow';
 
 const ADMIN_PERMISSIONS_BACKGROUND_WRAPPER_CLASSNAME =
   'pointer-events-none absolute inset-0 overflow-hidden';
@@ -63,87 +45,135 @@ const ADMIN_PERMISSIONS_BACKGROUND_BLOBS: AnimatedBackgroundBlob[] = [
   },
 ];
 
-function AdminPermissionsPage() {
-  const { showToast } = useToast();
-
-  const [permissions, setPermissions] = useState<PermissionItem[] | null>(
-    null,
-  );
-  const [error, setError] = useState<string | null>(null);
-  const [rowError, setRowError] = useState<string | null>(null);
-
-  const [showCreateForm, setShowCreateForm] = useState(false);
-  const [editingId, setEditingId] = useState<string | null>(null);
-
-  const createForm = useForm<PermissionFormValues>({
-    resolver: zodResolver(permissionSchema),
-    defaultValues: {
-      resource: '',
-      action: '',
-      description: '',
-    },
-  });
-
-  const editForm = useForm<PermissionFormValues>({
-    resolver: zodResolver(permissionSchema),
-    defaultValues: {
-      resource: '',
-      action: '',
-      description: '',
-    },
-  });
-
-  async function loadPermissions(): Promise<void> {
-  setError(null);
-
-  try {
-    const res = await apiClient.get<unknown>(
-      '/authorization/permissions',
-    );
-
-    if (!isPermissionItemArray(res.data)) {
-      throw new Error('Unexpected permissions response');
-    }
-
-    setPermissions(res.data);
-  } catch (err: unknown) {
-    setError(getErrorMessage(err));
-  }
+interface PermissionsScope {
+  authVersion: number;
+  active: boolean;
+  ready: boolean;
+  mutating: boolean;
+  needsRefresh: boolean;
+  controller: AbortController | null;
 }
 
-  useEffect(() => {
-    loadPermissions();
-  }, []);
+function AdminPermissionsPage() {
+  const { showToast } = useToast();
+  const [authVersion, setAuthVersion] = useState(getAuthVersion);
+  const [permissions, setPermissions] = useState<PermissionItem[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [rowError, setRowError] = useState<string | null>(null);
+  const [showCreateForm, setShowCreateForm] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [isMutating, setIsMutating] = useState(false);
+  const scopeRef = useRef<PermissionsScope | null>(null);
+  const editForm = useForm<PermissionFormValues>({
+    resolver: zodResolver(permissionSchema),
+    defaultValues: { resource: '', action: '', description: '' },
+  });
 
-  async function onCreate(values: PermissionFormValues) {
-    setRowError(null);
+  const isCurrent = useCallback((scope: PermissionsScope) =>
+    scope.active && scopeRef.current === scope &&
+    getAuthVersion() === scope.authVersion, []);
 
+  const loadPermissions = useCallback(async (scope: PermissionsScope): Promise<void> => {
+    if (!isCurrent(scope)) return;
+    scope.controller?.abort();
+    const controller = new AbortController();
+    scope.controller = controller;
+    scope.ready = false;
+    setPermissions(null);
+    setError(null);
     try {
-      await apiClient.post('/authorization/permissions', {
-        resource: values.resource,
-        action: values.action,
-        ...(values.description
-          ? { description: values.description }
-          : {}),
-      });
+      const nextPermissions = await getPermissions({ signal: controller.signal });
+      if (!isCurrent(scope) || controller.signal.aborted) return;
+      scope.ready = true;
+      scope.needsRefresh = false;
+      setPermissions(nextPermissions);
+    } catch (error: unknown) {
+      if (!isCurrent(scope) || controller.signal.aborted) return;
+      const message = getErrorMessage(error);
+      setError(scope.needsRefresh
+        ? `Changes saved, but permissions could not be refreshed. ${message}`
+        : message);
+    }
+  }, [isCurrent]);
 
-      createForm.reset();
-      setShowCreateForm(false);
+  useEffect(() => subscribeToAccessToken(() => {
+    setAuthVersion(getAuthVersion());
+  }), []);
 
-      await loadPermissions();
+  useEffect(() => {
+    const scope: PermissionsScope = {
+      authVersion, active: true, ready: false, mutating: false,
+      needsRefresh: false, controller: null,
+    };
+    scopeRef.current = scope;
+    setIsMutating(false);
+    setRowError(null);
+    setShowCreateForm(false);
+    setEditingId(null);
+    void loadPermissions(scope);
+    return () => {
+      scope.active = false;
+      scope.controller?.abort();
+    };
+  }, [authVersion, loadPermissions]);
 
-      showToast(
-        `Permission "${formatPermission(values)}" created`,
-      );
-    } catch (err) {
-      setRowError(getErrorMessage(err));
+  async function retryPermissions(): Promise<void> {
+    const scope = scopeRef.current;
+    if (scope && !scope.mutating) await loadPermissions(scope);
+  }
+
+  async function mutate({
+    request, onSaved, successMessage,
+  }: {
+    request: () => Promise<void>;
+    onSaved: () => void;
+    successMessage: string;
+  }): Promise<void> {
+    const scope = scopeRef.current;
+    if (!scope || !isCurrent(scope) || !scope.ready || scope.mutating) return;
+    scope.mutating = true;
+    setIsMutating(true);
+    setRowError(null);
+    try {
+      await request();
+    } catch (error: unknown) {
+      if (isCurrent(scope)) {
+        scope.mutating = false;
+        setIsMutating(false);
+        setRowError(getErrorMessage(error));
+      }
+      return;
+    }
+    if (!isCurrent(scope)) return;
+    scope.needsRefresh = true;
+    onSaved();
+    showToast(successMessage);
+    await loadPermissions(scope);
+    if (isCurrent(scope)) {
+      scope.mutating = false;
+      setIsMutating(false);
     }
   }
 
-  function startEditing(permission: PermissionItem) {
+  async function onCreate(values: PermissionFormValues, onSaved: () => void): Promise<void> {
+    await mutate({
+      request: () => createPermission({
+        resource: values.resource,
+        action: values.action,
+        ...(values.description ? { description: values.description } : {}),
+      }),
+      onSaved: () => {
+        setShowCreateForm(false);
+        onSaved();
+      },
+      successMessage: 'Permission created',
+    });
+  }
+
+  function startEditing(permission: PermissionItem): void {
+    if (isMutating) return;
     setEditingId(permission.id);
     setRowError(null);
-
     editForm.reset({
       resource: permission.resource,
       action: permission.action,
@@ -151,55 +181,25 @@ function AdminPermissionsPage() {
     });
   }
 
-  async function onSaveEdit(values: PermissionFormValues) {
+  async function onSaveEdit(values: PermissionFormValues): Promise<void> {
     if (!editingId) return;
-
-    setRowError(null);
-
-    try {
-      await apiClient.patch(
-        `/authorization/permissions/${editingId}`,
-        {
-          resource: values.resource,
-          action: values.action,
-          description: values.description || "",
-        },
-      );
-
-      setEditingId(null);
-
-      await loadPermissions();
-
-      showToast('Permission updated');
-    } catch (err) {
-      setRowError(getErrorMessage(err));
-    }
+    const permissionId = editingId;
+    await mutate({
+      request: () => updatePermission(permissionId, {
+        resource: values.resource, action: values.action, description: values.description ?? '',
+      }),
+      onSaved: () => setEditingId(null),
+      successMessage: 'Permission updated',
+    });
   }
 
-  async function handleDelete(permission: PermissionItem) {
-    if (
-      !window.confirm(
-        `Delete permission "${formatPermission(permission)}"? This also removes it from every role that has it.`,
-      )
-    ) {
-      return;
-    }
-
-    setRowError(null);
-
-    try {
-      await apiClient.delete(
-        `/authorization/permissions/${permission.id}`,
-      );
-
-      await loadPermissions();
-
-      showToast(
-        `Permission "${formatPermission(permission)}" deleted`,
-      );
-    } catch (err) {
-      setRowError(getErrorMessage(err));
-    }
+  async function handleDelete(permission: PermissionItem): Promise<void> {
+    if (isMutating || !window.confirm(`Delete permission "${formatPermission(permission)}"? This also removes it from every role that has it.`)) return;
+    await mutate({
+      request: () => deletePermission(permission.id),
+      onSaved: () => setEditingId((current) => current === permission.id ? null : current),
+      successMessage: 'Permission deleted',
+    });
   }
 
   return (
@@ -266,6 +266,7 @@ function AdminPermissionsPage() {
                 <Button
                   type="button"
                   variant={showCreateForm ? 'ghost' : 'primary'}
+                  isDisabled={isMutating || permissions === null}
                   onPress={() =>
                     setShowCreateForm((value) => !value)
                   }
@@ -294,6 +295,7 @@ function AdminPermissionsPage() {
                     role="alert"
                   >
                     {error}
+                    <button type="button" onClick={() => void retryPermissions()} disabled={isMutating} className="ml-3 underline disabled:opacity-50">Retry loading permissions</button>
                   </motion.p>
                 )}
 
@@ -313,123 +315,7 @@ function AdminPermissionsPage() {
               </AnimatePresence>
 
               {/* Create Form */}
-              <AnimatePresence>
-                {showCreateForm && (
-                  <motion.form
-                    initial={{
-                      opacity: 0,
-                      height: 0,
-                    }}
-                    animate={{
-                      opacity: 1,
-                      height: 'auto',
-                    }}
-                    exit={{
-                      opacity: 0,
-                      height: 0,
-                    }}
-                    transition={{ duration: 0.25 }}
-                    onSubmit={createForm.handleSubmit(onCreate)}
-                    className="mb-6 overflow-hidden"
-                  >
-                    <div className="rounded-xl border border-indigo-400/20 bg-indigo-500/5 p-5">
-                      <div className="mb-4">
-                        <h3 className="font-medium text-white">
-                          Create permission
-                        </h3>
-
-                        <p className="mt-1 text-xs text-slate-400">
-                          Permissions follow the resource:action
-                          format.
-                        </p>
-                      </div>
-
-                      <div className="grid gap-4 md:grid-cols-2">
-                        {/* Resource */}
-                        <div>
-                          <label className="mb-2 block text-sm font-medium text-slate-300">
-                            Resource
-                          </label>
-
-                          <Input
-                            placeholder="e.g. roles"
-                            {...createForm.register('resource')}
-                            className="text-black"
-                          />
-
-                          {createForm.formState.errors.resource && (
-                            <p className="mt-1 text-xs text-red-300">
-                              {
-                                createForm.formState.errors.resource
-                                  .message
-                              }
-                            </p>
-                          )}
-                        </div>
-
-                        {/* Action */}
-                        <div>
-                          <label className="mb-2 block text-sm font-medium text-slate-300">
-                            Action
-                          </label>
-
-                          <Input
-                            placeholder="e.g. read"
-                            {...createForm.register('action')}
-                            className="text-black"
-                          />
-
-                          {createForm.formState.errors.action && (
-                            <p className="mt-1 text-xs text-red-300">
-                              {
-                                createForm.formState.errors.action
-                                  .message
-                              }
-                            </p>
-                          )}
-                        </div>
-
-                        {/* Description */}
-                        <div className="md:col-span-2">
-                          <label className="mb-2 block text-sm font-medium text-slate-300">
-                            Description
-                          </label>
-
-                          <Input
-                            placeholder="Optional description"
-                            {...createForm.register('description')}
-                            className="text-black"
-                          />
-
-                          {createForm.formState.errors.description && (
-                            <p className="mt-1 text-xs text-red-300">
-                              {
-                                createForm.formState.errors.description
-                                  .message
-                              }
-                            </p>
-                          )}
-                        </div>
-                      </div>
-
-                      <div className="mt-5">
-                        <Button
-                          type="submit"
-                          variant="primary"
-                          isDisabled={
-                            createForm.formState.isSubmitting
-                          }
-                          className="bg-indigo-600 text-white hover:bg-indigo-500"
-                        >
-                          {createForm.formState.isSubmitting
-                            ? 'Creating…'
-                            : 'Create permission'}
-                        </Button>
-                      </div>
-                    </div>
-                  </motion.form>
-                )}
-              </AnimatePresence>
+              <CreatePermissionForm show={showCreateForm} disabled={isMutating || permissions === null} onCreate={onCreate} />
 
               {/* Loading */}
               {permissions === null && !error && (
@@ -475,159 +361,17 @@ function AdminPermissionsPage() {
 
                   <ul className="divide-y divide-white/10">
                     {permissions.map((permission) => (
-                      <motion.li
+                      <PermissionRow
                         key={permission.id}
-                        layout
-                        initial={{
-                          opacity: 0,
-                          y: 8,
-                        }}
-                        animate={{
-                          opacity: 1,
-                          y: 0,
-                        }}
-                        className="p-4 sm:px-5"
-                      >
-                        {editingId === permission.id ? (
-                          /* Edit Form */
-                          <form
-                            onSubmit={editForm.handleSubmit(
-                              onSaveEdit,
-                            )}
-                            className="rounded-xl border border-indigo-400/20 bg-indigo-500/5 p-4"
-                          >
-                            <div className="grid gap-4 md:grid-cols-2">
-                              {/* Resource */}
-                              <div>
-                                <label className="mb-2 block text-sm font-medium text-slate-300">
-                                  Resource
-                                </label>
-
-                                <Input
-                                  {...editForm.register('resource')}
-                                  className="text-black"
-                                />
-
-                                {editForm.formState.errors.resource && (
-                                  <p className="mt-1 text-xs text-red-300">
-                                    {
-                                      editForm.formState.errors.resource
-                                        .message
-                                    }
-                                  </p>
-                                )}
-                              </div>
-
-                              {/* Action */}
-                              <div>
-                                <label className="mb-2 block text-sm font-medium text-slate-300">
-                                  Action
-                                </label>
-
-                                <Input
-                                  {...editForm.register('action')}
-                                  className="text-black"
-                                />
-
-                                {editForm.formState.errors.action && (
-                                  <p className="mt-1 text-xs text-red-300">
-                                    {
-                                      editForm.formState.errors.action
-                                        .message
-                                    }
-                                  </p>
-                                )}
-                              </div>
-
-                              {/* Description */}
-                              <div className="md:col-span-2">
-                                <label className="mb-2 block text-sm font-medium text-slate-300">
-                                  Description
-                                </label>
-
-                                <Input
-                                  {...editForm.register('description')}
-                                  className="text-black"
-                                />
-                              </div>
-                            </div>
-
-                            <div className="mt-4 flex gap-2">
-                              <Button
-                                type="submit"
-                                variant="primary"
-                                isDisabled={
-                                  editForm.formState.isSubmitting
-                                }
-                                className="bg-indigo-600 text-white hover:bg-indigo-500"
-                              >
-                                {editForm.formState.isSubmitting
-                                  ? 'Saving…'
-                                  : 'Save'}
-                              </Button>
-
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                onPress={() =>
-                                  setEditingId(null)
-                                }
-                                className="border border-white/10 text-slate-300 hover:bg-white/10"
-                              >
-                                Cancel
-                              </Button>
-                            </div>
-                          </form>
-                        ) : (
-                          /* Permission Row */
-                          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                            <div className="min-w-0">
-                              <div className="flex items-center gap-3">
-                                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-indigo-500/10 text-indigo-300">
-                                  <span className="text-sm">
-                                    /
-                                  </span>
-                                </div>
-
-                                <div className="min-w-0">
-                                  <p className="truncate font-mono text-sm font-medium text-white">
-                                    {formatPermission(permission)}
-                                  </p>
-
-                                  <p className="mt-1 truncate text-xs text-slate-500">
-                                    {permission.description ||
-                                      'No description'}
-                                  </p>
-                                </div>
-                              </div>
-                            </div>
-
-                            <div className="flex shrink-0 gap-2">
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                onPress={() =>
-                                  startEditing(permission)
-                                }
-                                className="border border-white/10 text-slate-300 hover:bg-white/10 hover:text-white"
-                              >
-                                Edit
-                              </Button>
-
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                onPress={() =>
-                                  handleDelete(permission)
-                                }
-                                className="border border-red-400/20 bg-red-500/10 text-red-300 hover:bg-red-500/20"
-                              >
-                                Delete
-                              </Button>
-                            </div>
-                          </div>
-                        )}
-                      </motion.li>
+                        permission={permission}
+                        isEditing={editingId === permission.id}
+                        isMutating={isMutating}
+                        editForm={editForm}
+                        onStartEdit={() => startEditing(permission)}
+                        onCancelEdit={() => setEditingId(null)}
+                        onSaveEdit={onSaveEdit}
+                        onDelete={() => handleDelete(permission)}
+                      />
                     ))}
                   </ul>
                 </div>

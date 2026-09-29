@@ -2,13 +2,9 @@ import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Button } from '@heroui/react';
 import { AnimatePresence, motion } from 'framer-motion';
+import type { AuthUser } from '../../auth/contracts';
 
-
-export interface HeaderUser {
-  email?: string;
-  firstName?: string | null;
-  lastName?: string | null;
-}
+export type HeaderUser = Pick<AuthUser, 'email' | 'firstName' | 'lastName' | 'hasPassword'>;
 
 interface UserMenuProps {
   user: HeaderUser;
@@ -16,21 +12,29 @@ interface UserMenuProps {
   isLoggingOut?: boolean;
   profileHref?: string;
   sessionsHref?: string;
+  loginHistoryHref?: string;
   securityHref?: string;
   changePasswordHref?: string;
+  setPasswordHref?: string;
 }
+
 export default function UserMenu({
   user,
   onLogout,
   isLoggingOut = false,
   profileHref = '/profile',
   sessionsHref = '/sessions',
+  loginHistoryHref = '/login-history',
   securityHref = '/settings/2fa',
   changePasswordHref = '/settings/change-password',
+  setPasswordHref = '/settings/set-password',
 }: UserMenuProps) {
   const [isOpen, setIsOpen] = useState(false);
+  const [isLogoutPending, setIsLogoutPending] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
-
+  const mountedRef = useRef(false);
+  const logoutPendingRef = useRef(false);
+  const isBusy = isLoggingOut || isLogoutPending;
   const displayName =
     [user.firstName, user.lastName].filter(Boolean).join(' ') ||
     user.email?.split('@')[0] ||
@@ -39,10 +43,12 @@ export default function UserMenu({
   const initial = displayName.charAt(0).toUpperCase();
 
   useEffect(() => {
+    mountedRef.current = true;
     function handleClickOutside(event: MouseEvent) {
       if (
         menuRef.current &&
-        !menuRef.current.contains(event.target as Node)
+        event.target instanceof Node &&
+        !menuRef.current.contains(event.target)
       ) {
         setIsOpen(false);
       }
@@ -58,25 +64,37 @@ export default function UserMenu({
     document.addEventListener('keydown', handleEscape);
 
     return () => {
+      mountedRef.current = false;
       document.removeEventListener('mousedown', handleClickOutside);
       document.removeEventListener('keydown', handleEscape);
     };
   }, []);
 
-  async function handleLogout() {
+  async function handleLogout(): Promise<void> {
+    if (isLoggingOut || logoutPendingRef.current) return;
+    logoutPendingRef.current = true;
+    setIsLogoutPending(true);
     setIsOpen(false);
-    await onLogout();
+    try {
+      await onLogout();
+    } finally {
+      logoutPendingRef.current = false;
+      if (mountedRef.current) setIsLogoutPending(false);
+    }
   }
+
   return (
     <div ref={menuRef} className="relative">
       <button
         type="button"
         onClick={() => setIsOpen((previous) => !previous)}
+        disabled={isBusy}
+        aria-label={isBusy ? 'Logging out' : 'Open user menu'}
         aria-expanded={isOpen}
         aria-haspopup="menu"
         className="flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-white/10 text-sm font-semibold text-indigo-300 transition-all hover:border-indigo-400/30 hover:bg-white/15 focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
       >
-        {initial}
+        {isBusy ? '…' : initial}
       </button>
 
       <AnimatePresence>
@@ -123,6 +141,15 @@ export default function UserMenu({
               </Link>
 
               <Link
+                to={loginHistoryHref}
+                onClick={() => setIsOpen(false)}
+                className="flex items-center rounded-xl px-3 py-2.5 text-sm text-slate-200 transition-colors hover:bg-white/10 hover:text-white"
+                role="menuitem"
+              >
+                Login history
+              </Link>
+
+              <Link
                 to={securityHref}
                 onClick={() => setIsOpen(false)}
                 className="flex items-center rounded-xl px-3 py-2.5 text-sm text-slate-200 transition-colors hover:bg-white/10 hover:text-white"
@@ -130,17 +157,14 @@ export default function UserMenu({
               >
                 Security
               </Link>
-
               <Link
-                to={changePasswordHref}
+                to={user.hasPassword ? changePasswordHref : setPasswordHref}
                 onClick={() => setIsOpen(false)}
                 className="flex items-center rounded-xl px-3 py-2.5 text-sm text-slate-200 transition-colors hover:bg-white/10 hover:text-white"
                 role="menuitem"
               >
-                change password
+                {user.hasPassword ? 'Change password' : 'Set password'}
               </Link>
-
-
             </div>
 
             {/* Logout */}
@@ -149,10 +173,11 @@ export default function UserMenu({
                 type="button"
                 variant="ghost"
                 onPress={handleLogout}
-                isDisabled={isLoggingOut}
+                isDisabled={isBusy}
+                isPending={isBusy}
                 className="w-full justify-start border border-red-400/10 bg-red-500/5 text-red-300 hover:bg-red-500/15"
               >
-                {isLoggingOut ? 'Logging out…' : 'Log out'}
+                {isBusy ? 'Logging out…' : 'Log out'}
               </Button>
             </div>
           </motion.div>

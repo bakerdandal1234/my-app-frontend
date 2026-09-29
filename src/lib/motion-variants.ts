@@ -1,10 +1,7 @@
 import type { Variants } from 'framer-motion';
 
 /**
- * Shared framer-motion variants for the FlowDesk design system — extracted
- * from HomePage/ChangePasswordPage (where they were duplicated) so every
- * page's entrance animation stays consistent instead of copy-pasted values
- * drifting apart over time.
+ * Shared animation variants for forms, status cards and administration pages.
  */
 
 /** Card/form container: fades + rises + scales in, staggering its children. */
@@ -57,10 +54,7 @@ export const errorVariants: Variants = {
 };
 
 /**
- * "Status page" family — for single-outcome pages (email verification,
- * OAuth callback) rather than multi-field forms. Extracted from
- * VerifyEmailPage/OAuthCallbackPage, where both defined the exact same
- * values independently.
+ * Status animations for email verification and OAuth callback pages.
  */
 
 /** Status card container: fades + rises in, staggering its children (no scale). */
@@ -114,14 +108,9 @@ export const statusIconVariants: Variants = {
 };
 
 /**
- * "Admin list page" family — for the admin Users/Roles/Permissions pages.
- * itemVariants and errorVariants were defined identically, independently,
- * in all three pages, and are consolidated here. containerVariants is only
- * shared between AdminUsersPage and AdminPermissionsPage, which fade the
- * whole page in on load (opacity 0→1); AdminRolesPage's own container
- * variant has no opacity step (it only staggers children) and is
- * deliberately kept local rather than forced to match, since unifying it
- * would be a real, visible change to that page's load animation.
+ * Administration list animations. Users and permissions pages share the fade-in
+ * container; the roles page keeps its own container to preserve its stagger-only
+ * entrance animation.
  */
 
 /** Admin list container: fades the page in, staggering its children. */

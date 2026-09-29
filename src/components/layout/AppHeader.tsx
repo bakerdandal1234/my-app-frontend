@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
+
 export interface HeaderNavigationItem {
   label: string;
   href: string;
@@ -11,7 +12,6 @@ interface AppHeaderProps {
   navigation?: HeaderNavigationItem[];
   actions?: ReactNode;
 }
-
 
 export default function AppHeader({
   appName,
@@ -29,23 +29,17 @@ export default function AppHeader({
             {appName}
           </Link>
 
-
-
           {navigation.length > 0 && (
             <nav className="hidden items-center gap-2 md:flex">
-              {navigation.map((item) => {
-                
-
-                return (
-                  <Link
-                    key={`${item.label}-${item.href}`}
-                    to={item.href}
-                    className="rounded-lg px-3 py-2 text-sm font-medium text-slate-300 transition-colors hover:bg-white/10 hover:text-white"
-                  >
-                    {item.label}
-                  </Link>
-                );
-              })}
+              {navigation.map((item) => (
+                <Link
+                  key={`${item.label}-${item.href}`}
+                  to={item.href}
+                  className="rounded-lg px-3 py-2 text-sm font-medium text-slate-300 transition-colors hover:bg-white/10 hover:text-white"
+                >
+                  {item.label}
+                </Link>
+              ))}
             </nav>
           )}
         </div>

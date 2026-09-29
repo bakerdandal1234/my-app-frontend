@@ -8,6 +8,7 @@ import AnimatedBackground, {
 import GlassCard from '../../components/shared/GlassCard';
 import { containerVariants, itemVariants } from '../../lib/motion-variants';
 import BackLink from '../../components/shared/BackLink';
+
 const rowVariants: Variants = {
   hidden: {
     opacity: 0,

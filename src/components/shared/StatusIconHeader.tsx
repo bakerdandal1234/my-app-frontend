@@ -4,11 +4,7 @@ import { Card } from '@heroui/react';
 import { statusItemVariants, statusIconVariants } from '../../lib/motion-variants';
 
 /**
- * The "icon in a circle + title + description" header repeated verbatim
- * across VerifyEmailPage (success/error) and OAuthCallbackPage (error) —
- * three copies of the exact same markup and motion, differing only in the
- * icon, its circle color and the text. Purely presentational: no auth
- * logic lives here.
+ * Presentational status header with an animated icon, title and description.
  */
 interface StatusIconHeaderProps {
   /** The icon itself, already sized/colored (an <svg> or a <Spinner />). */

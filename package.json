@@ -4,6 +4,9 @@
   "version": "0.0.1",
   "type": "module",
   "scripts": {
+    "test:auth": "node --loader ./tests/auth-test-loader.mjs --test tests/api-validation.test.ts tests/auth-flows.test.mjs tests/auth-sync.test.mjs",
+    "check:auth-types": "node scripts/check-auth-types.mjs",
+    "check:auth-sync": "node scripts/check-auth-sync.mjs",
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",

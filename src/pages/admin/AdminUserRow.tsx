@@ -1,10 +1,10 @@
-import { motion, AnimatePresence } from 'framer-motion';
-import type { AdminUser, RoleItem } from '../../api/guards';
+import { motion } from 'framer-motion';
+import type { AdminUser, RoleSummary } from '../../auth/authorization-contracts';
 import AdminUserAccessPanel from './AdminUserAccessPanel';
 
 interface AdminUserRowProps {
   user: AdminUser;
-  roles: RoleItem[];
+  roles: RoleSummary[];
   isExpanded: boolean;
   onToggle: () => void;
 }
@@ -45,6 +45,7 @@ function AdminUserRow({ user, roles, isExpanded, onToggle }: AdminUserRowProps) 
       <button
         type="button"
         onClick={onToggle}
+        aria-expanded={isExpanded}
         className="group flex w-full items-center justify-between gap-4 text-left"
       >
         <div className="flex min-w-0 items-center gap-3">
@@ -90,19 +91,16 @@ function AdminUserRow({ user, roles, isExpanded, onToggle }: AdminUserRowProps) 
       </button>
 
       {/* Expanded Access Panel */}
-      <AnimatePresence initial={false}>
         {isExpanded && (
           <motion.div
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: 'auto' }}
-            exit={{ opacity: 0, height: 0 }}
             transition={{ duration: 0.25 }}
             className="overflow-hidden"
           >
-            <AdminUserAccessPanel userId={user.id} roles={roles} />
+            <AdminUserAccessPanel key={user.id} userId={user.id} roles={roles} />
           </motion.div>
         )}
-      </AnimatePresence>
     </motion.li>
   );
 }

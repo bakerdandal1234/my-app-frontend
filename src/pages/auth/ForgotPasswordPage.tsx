@@ -5,20 +5,18 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { Button, Card } from '@heroui/react';
 import { motion } from 'framer-motion';
-import { apiClient } from '../../api/client';
+import { requestPasswordReset } from '../../auth/api';
 import { getErrorMessage } from '../../api/errors';
 import AuthPageShell from '../../components/layout/AuthPageShell';
 import GlassCard from '../../components/shared/GlassCard';
 import FormField from '../../components/shared/FormField';
 import FormErrorBanner from '../../components/shared/FormErrorBanner';
 import { containerVariants, itemVariants } from '../../lib/motion-variants';
+import { emailSchema } from '../../lib/validation';
 
 /** Mirrors ForgotPasswordDto (auth/dto/forgot-password.dto.ts). */
 const forgotPasswordSchema = z.object({
-  email: z
-    .string()
-    .min(1, 'Email is required.')
-    .email('Please enter a valid email address.'),
+  email: emailSchema,
 });
 
 type ForgotPasswordValues = z.infer<typeof forgotPasswordSchema>;
@@ -36,17 +34,16 @@ function ForgotPasswordPage() {
     defaultValues: { email: '' },
   });
 
-  async function onSubmit(values: ForgotPasswordValues) {
+  async function onSubmit(values: ForgotPasswordValues): Promise<void> {
     setApiError(null);
 
     try {
-      await apiClient.post('/auth/forgot-password', values);
+      await requestPasswordReset(values.email);
 
       // The backend always returns the same generic response whether or
       // not the email is registered (to avoid leaking account existence).
       setSubmitted(true);
-    } catch (err) {
-      // Genuine failure such as network error or server error.
+    } catch (err: unknown) {
       setApiError(getErrorMessage(err));
     }
   }
@@ -110,6 +107,7 @@ function ForgotPasswordPage() {
     <AuthPageShell>
       <motion.form
         onSubmit={handleSubmit(onSubmit)}
+        noValidate
         className="w-full max-w-sm"
         variants={containerVariants}
         initial="hidden"
@@ -137,6 +135,7 @@ function ForgotPasswordPage() {
               label="Email"
               type="email"
               autoComplete="email"
+              inputMode="email"
               registration={register('email')}
               error={errors.email}
             />
@@ -153,6 +152,7 @@ function ForgotPasswordPage() {
                 type="submit"
                 fullWidth
                 isPending={isSubmitting}
+                isDisabled={isSubmitting}
               >
                 {isSubmitting ? 'Sending…' : 'Send reset link'}
               </Button>

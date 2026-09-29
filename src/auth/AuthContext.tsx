@@ -1,60 +1,74 @@
 import {
   createContext,
+  useCallback,
   useContext,
   useEffect,
+  useRef,
   useState,
   type ReactNode,
 } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { apiClient, refreshAccessToken } from '../api/client';
-import { isAuthRejection } from '../api/errors';
+import { getErrorMessage, isAuthRejection } from '../api/errors';
 import {
   getAccessToken,
   getAuthVersion,
   setAccessToken,
   subscribeToAccessToken,
 } from '../api/tokenStore';
-import {
-  isAuthUser,
-  isUserAccess,
-  type AuthUser,
-} from '../api/guards';
-/**
- * Widened as pages need more fields from GET /users/me. Now covers the
- * full set of non-excluded fields on the User entity (see backend
- * users/entities/user.entity.ts) needed by the Profile and 2FA pages —
- * everything @Exclude()'d there (password, tokens, lockout counters)
- * never reaches this type in the first place.
- */
-export type { AuthUser } from '../api/guards';
+import { useToast } from '../ui/ToastContext';
+import { getCurrentUser, logoutSession, refreshAccessToken } from './api';
+import { getCurrentUserAccess } from './authorization-api';
+import type { AuthUser } from './contracts';
 
-/** Mirrors GET /users/me/access's response shape. */
-interface AccessInfo {
+export type { AuthUser } from './contracts';
+
+type AccessStatus = 'idle' | 'loading' | 'ready' | 'error';
+
+interface AccessState {
+  status: AccessStatus;
   roles: string[];
   permissions: string[];
+  error: string | null;
 }
 
-const EMPTY_ACCESS: AccessInfo = { roles: [], permissions: [] };
+const EMPTY_ACCESS: AccessState = {
+  status: 'idle',
+  roles: [],
+  permissions: [],
+  error: null,
+};
+
+interface AuthState {
+  version: number;
+  user: AuthUser | null;
+  isLoading: boolean;
+  access: AccessState;
+}
+
+interface AuthRequest {
+  version: number;
+  controller: AbortController;
+}
+
+function isCurrentRequest(request: AuthRequest, active: AuthRequest | null): boolean {
+  return request === active &&
+    request.version === getAuthVersion() &&
+    !request.controller.signal.aborted;
+}
 
 interface AuthContextValue {
   user: AuthUser | null;
   roles: string[];
   permissions: string[];
-  /** Convenience check against `permissions` — e.g. hasPermission('roles:read'). */
   hasPermission: (permission: string) => boolean;
   isAuthenticated: boolean;
-  /** True only during the initial silent-refresh attempt on app load. */
+  /** True while restoring or establishing the current user's identity. */
   isLoading: boolean;
+  accessStatus: AccessStatus;
+  accessError: string | null;
+  retryAccess: () => Promise<void>;
   setUser: (user: AuthUser | null) => void;
-  /** Revokes the current session on the backend, clears local state, and redirects to "/". */
   logout: () => Promise<void>;
-  /**
-   * Stores a freshly-obtained access token and loads the current user's
-   * profile + roles/permissions. Shared by every flow that ends with "I now
-   * have an accessToken and need to become logged in" — password login,
-   * the 2FA step, and the OAuth exchange callback — so they can't drift out
-   * of sync with each other.
-   */
   establishSession: (accessToken: string) => Promise<void>;
 }
 
@@ -62,163 +76,194 @@ const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const navigate = useNavigate();
-  const [accessToken, setLocalAccessToken] = useState<string | null>(getAccessToken());
-  const [user, setUser] = useState<AuthUser | null>(null);
-  const [access, setAccess] = useState<AccessInfo>(EMPTY_ACCESS);
-  const [isLoading, setIsLoading] = useState(true);
-  // tokenStore is mutated directly by apiClient's interceptors (background
-  // refresh, or forced logout when a refresh ultimately fails) — this keeps
-  // React state in sync with those out-of-band changes. This is also what
-  // implements "auto-logout on refresh failure": whenever the interceptor
-  // gives up and calls setAccessToken(null), this listener clears `user`
-  // (and now `access`) too, so isAuthenticated flips to false without any
-  // extra plumbing.
-  useEffect(() => {
-    return subscribeToAccessToken((token) => {
-      setLocalAccessToken(token);
-      if (!token) {
-        setUser(null);
-        setAccess(EMPTY_ACCESS);
-        setIsLoading(false);
-      }
-    });
+  const { showToast } = useToast();
+  const mounted = useRef(false);
+  const sessionRequest = useRef<AuthRequest | null>(null);
+  const accessRequest = useRef<AuthRequest | null>(null);
+  const [state, setState] = useState<AuthState>(() => ({
+    version: getAuthVersion(),
+    user: null,
+    isLoading: true,
+    access: EMPTY_ACCESS,
+  }));
+
+  const cancelRequests = useCallback(() => {
+    sessionRequest.current?.controller.abort();
+    accessRequest.current?.controller.abort();
+    sessionRequest.current = null;
+    accessRequest.current = null;
   }, []);
 
-  async function loadAccess(
-    expectedUserId: string,
-  ): Promise<AccessInfo> {
-    const response = await apiClient.get<unknown>('/users/me/access');
-
-    if (
-      !isUserAccess(response.data) ||
-      response.data.userId !== expectedUserId
-    ) {
-      throw new Error('Unexpected access response');
-    }
-
-    return {
-      roles: response.data.roles,
-      permissions: response.data.permissions,
+  const beginSession = useCallback((): AuthRequest => {
+    cancelRequests();
+    const request = {
+      version: getAuthVersion(),
+      controller: new AbortController(),
     };
-  }
+    sessionRequest.current = request;
+    setState({
+      version: request.version,
+      user: null,
+      isLoading: true,
+      access: EMPTY_ACCESS,
+    });
+    return request;
+  }, [cancelRequests]);
 
-  /**
-   * GET /users/me + GET /users/me/access, validated. Throws if a login or
-   * logout superseded `version` while the requests were in flight, so a
-   * caller never applies a stale session.
-   */
-  async function loadSession(
+  const loadAccess = useCallback(async (
+    userId: string,
     version: number,
-  ): Promise<{ user: AuthUser; access: AccessInfo }> {
-    const me = await apiClient.get<unknown>('/users/me');
+  ): Promise<void> => {
+    if (!mounted.current || version !== getAuthVersion()) return;
 
-    if (version !== getAuthVersion()) {
+    accessRequest.current?.controller.abort();
+    const request = { version, controller: new AbortController() };
+    accessRequest.current = request;
+
+    function publishAccess(access: AccessState): void {
+      setState((current) => {
+        if (
+          !isCurrentRequest(request, accessRequest.current) ||
+          current.version !== version ||
+          current.user?.id !== userId
+        ) return current;
+        return { ...current, access };
+      });
+    }
+
+    publishAccess({ ...EMPTY_ACCESS, status: 'loading' });
+    try {
+      const access = await getCurrentUserAccess(userId, {
+        signal: request.controller.signal,
+      });
+      if (!isCurrentRequest(request, accessRequest.current)) return;
+      publishAccess({
+        status: 'ready',
+        roles: access.roles,
+        permissions: access.permissions,
+        error: null,
+      });
+    } catch (error: unknown) {
+      if (!isCurrentRequest(request, accessRequest.current)) return;
+      // Authorization failures do not invalidate an already verified identity.
+      publishAccess({
+        ...EMPTY_ACCESS,
+        status: 'error',
+        error: getErrorMessage(error),
+      });
+    }
+  }, []);
+
+  const loadSession = useCallback(async (request: AuthRequest): Promise<void> => {
+    const user = await getCurrentUser({ signal: request.controller.signal });
+    if (!isCurrentRequest(request, sessionRequest.current)) {
       throw new Error('Authentication was superseded');
     }
 
-    if (!isAuthUser(me.data)) {
-      throw new Error('Unexpected user response');
-    }
+    setState((current) => isCurrentRequest(request, sessionRequest.current)
+      ? { ...current, user, isLoading: false }
+      : current);
+    await loadAccess(user.id, request.version);
 
-    const nextAccess = await loadAccess(me.data.id);
-
-    if (version !== getAuthVersion()) {
+    if (!isCurrentRequest(request, sessionRequest.current)) {
       throw new Error('Authentication was superseded');
     }
+  }, [loadAccess]);
 
-    return { user: me.data, access: nextAccess };
-  }
-
-  // On first mount: try to restore a session from the httpOnly
-  // refresh_token cookie. The access token only ever lives in memory
-  // (see tokenStore.ts), so it's gone after every full page reload —
-  // without this, an already-logged-in user would see a login screen
-  // flash on every refresh.
   useEffect(() => {
-    let cancelled = false;
-    const restoreVersion = getAuthVersion();
-    (async () => {
+    mounted.current = true;
+    let observedVersion = getAuthVersion();
+    const unsubscribe = subscribeToAccessToken((token) => {
+      const version = getAuthVersion();
+      // Refresh rotates the token within the same session, preserving its data.
+      if (token !== null && version === observedVersion) return;
+      observedVersion = version;
+      cancelRequests();
+      setState({ version, user: null, isLoading: false, access: EMPTY_ACCESS });
+    });
+
+    const request = beginSession();
+    void (async () => {
       try {
         await refreshAccessToken();
-        if (cancelled || restoreVersion !== getAuthVersion()) return;
-
-        const session = await loadSession(restoreVersion);
-        if (cancelled) return;
-
-        setUser(session.user);
-        setAccess(session.access);
+        if (!isCurrentRequest(request, sessionRequest.current)) return;
+        await loadSession(request);
       } catch (error: unknown) {
-        if (!cancelled && restoreVersion === getAuthVersion()) {
-          // 401/403 just means "no valid session" and is the normal first-visit
-          // case. Anything else (network drop, 5xx, unexpected response shape)
-          // also lands on the login screen, but leaves a trace. Log the message
-          // only: an AxiosError object carries the request headers.
-          if (!isAuthRejection(error)) {
-            console.error(
-              'Session restore failed:',
-              error instanceof Error ? error.message : 'unknown error',
-            );
-          }
-          setAccessToken(null);
-          setUser(null);
-          setAccess(EMPTY_ACCESS);
+        if (!isCurrentRequest(request, sessionRequest.current)) return;
+        if (!isAuthRejection(error)) {
+          console.error('Session restore failed:', getErrorMessage(error));
         }
-      } finally {
-        if (!cancelled && restoreVersion === getAuthVersion()) {
-          setIsLoading(false);
-        }
+        setAccessToken(null);
       }
     })();
 
     return () => {
-      cancelled = true;
+      mounted.current = false;
+      unsubscribe();
+      cancelRequests();
     };
-  }, []);
+  }, [beginSession, cancelRequests, loadSession]);
 
   async function establishSession(newAccessToken: string): Promise<void> {
-    setUser(null);
-    setAccess(EMPTY_ACCESS);
+    if (!mounted.current) throw new Error('AuthProvider is not mounted');
+    if (state.version !== getAuthVersion()) {
+      throw new Error('Authentication was superseded');
+    }
     setAccessToken(newAccessToken);
-    const version = getAuthVersion();
+    const request = beginSession();
 
     try {
-      const session = await loadSession(version);
-
-      setUser(session.user);
-      setAccess(session.access);
+      await loadSession(request);
     } catch (error: unknown) {
-      if (version === getAuthVersion()) {
-        setAccessToken(null);
-      }
-
+      if (isCurrentRequest(request, sessionRequest.current)) setAccessToken(null);
       throw error;
-    } finally {
-      if (version === getAuthVersion()) {
-        setIsLoading(false);
-      }
     }
+  }
+
+  async function retryAccess(): Promise<void> {
+    if (state.user && state.version === getAuthVersion() && getAccessToken()) {
+      await loadAccess(state.user.id, state.version);
+    }
+  }
+
+  function setUser(user: AuthUser | null): void {
+    if (!mounted.current || state.version !== getAuthVersion() || !getAccessToken()) return;
+    setState((current) => {
+      if (current.version !== state.version || current.version !== getAuthVersion()) return current;
+      if (user && user.id !== current.user?.id) return current;
+      return { ...current, user, access: user ? current.access : EMPTY_ACCESS };
+    });
   }
 
   async function logout(): Promise<void> {
-    const token = getAccessToken();
-    setAccessToken(null);
+    if (!mounted.current || state.version !== getAuthVersion()) return;
+    const revocation = logoutSession();
     const version = getAuthVersion();
-
     try {
-      // Retain only the revocation request's credentials after local logout.
-      await apiClient.post('/auth/logout', {}, {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-        _retry: true,
-      });
-    } catch {
-      // Local logout remains effective when server revocation fails.
+      await revocation;
+    } catch (error: unknown) {
+      if (mounted.current && version === getAuthVersion()) {
+        showToast(
+          'Signed out locally, but the server session could not be revoked. ' + getErrorMessage(error),
+          'error',
+        );
+      }
     } finally {
-      if (version === getAuthVersion()) navigate('/');
+      if (mounted.current && version === getAuthVersion()) navigate('/');
     }
   }
 
+  const isCurrentVersion = state.version === getAuthVersion();
+  const user = isCurrentVersion ? state.user : null;
+  const isAuthenticated = !!getAccessToken() && !!user;
+  const access = isAuthenticated ? state.access : EMPTY_ACCESS;
+
   function hasPermission(permission: string): boolean {
-    return access.permissions.includes(permission);
+    return state.version === getAuthVersion() &&
+      !!getAccessToken() &&
+      !!state.user &&
+      state.access.status === 'ready' &&
+      state.access.permissions.includes(permission);
   }
 
   const value: AuthContextValue = {
@@ -226,8 +271,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     roles: access.roles,
     permissions: access.permissions,
     hasPermission,
-    isAuthenticated: !!accessToken && !!user,
-    isLoading,
+    isAuthenticated,
+    isLoading: isCurrentVersion && state.isLoading,
+    accessStatus: access.status,
+    accessError: access.error,
+    retryAccess,
     setUser,
     logout,
     establishSession,
@@ -238,8 +286,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
 export function useAuth(): AuthContextValue {
   const ctx = useContext(AuthContext);
-  if (!ctx) {
-    throw new Error('useAuth must be used within an AuthProvider');
-  }
+  if (!ctx) throw new Error('useAuth must be used within an AuthProvider');
   return ctx;
 }

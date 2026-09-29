@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { apiClient } from '../../api/client';
+import { getAdminUsers, getRoleSummaries } from '../../auth/authorization-api';
+import { getAuthVersion, subscribeToAccessToken } from '../../api/tokenStore';
 import { getErrorMessage } from '../../api/errors';
 import AnimatedBackground, {
   type AnimatedBackgroundBlob,
@@ -11,12 +12,7 @@ import {
   adminListItemVariants as itemVariants,
   adminListErrorVariants as errorVariants,
 } from '../../lib/motion-variants';
-import {
-  isAdminUserArray,
-  isRoleItemArray,
-  type AdminUser,
-  type RoleItem,
-} from '../../api/guards';
+import type { AdminUser, RoleSummary } from '../../auth/authorization-contracts';
 import AdminUserRow from './AdminUserRow';
 
 const ADMIN_USERS_BACKGROUND_WRAPPER_CLASSNAME =
@@ -42,43 +38,50 @@ const ADMIN_USERS_BACKGROUND_BLOBS: AnimatedBackgroundBlob[] = [
 ];
 
 function AdminUsersPage() {
+  const [authVersion, setAuthVersion] = useState(getAuthVersion);
   const [users, setUsers] = useState<AdminUser[] | null>(null);
-  const [roles, setRoles] = useState<RoleItem[]>([]);
+  const [roles, setRoles] = useState<RoleSummary[]>([]);
   const [error, setError] = useState<string | null>(null);
-
-  // Only one row's access panel can be open at a time; opening a
-  // different row (or the same one again) unmounts the previous
-  // AdminUserAccessPanel and mounts a fresh one — see useUserAccess.ts
-  // for why that mount boundary matters.
   const [expandedUserId, setExpandedUserId] = useState<string | null>(null);
+  const controllerRef = useRef<AbortController | null>(null);
+  const mountedRef = useRef(false);
 
-  async function loadUsersAndRoles(): Promise<void> {
+  const loadUsersAndRoles = useCallback(async (): Promise<void> => {
+    if (!mountedRef.current || getAuthVersion() !== authVersion) return;
+    controllerRef.current?.abort();
+    const controller = new AbortController();
+    controllerRef.current = controller;
+    setUsers(null);
+    setRoles([]);
     setError(null);
+    setExpandedUserId(null);
 
     try {
-      const [usersRes, rolesRes] = await Promise.all([
-        apiClient.get<unknown>('/authorization/users'),
-        apiClient.get<unknown>('/authorization/roles'),
+      const options = { signal: controller.signal };
+      const [nextUsers, nextRoles] = await Promise.all([
+        getAdminUsers(options), getRoleSummaries(options),
       ]);
-
-      if (!isAdminUserArray(usersRes.data)) {
-        throw new Error('Unexpected users response');
-      }
-
-      if (!isRoleItemArray(rolesRes.data)) {
-        throw new Error('Unexpected roles response');
-      }
-
-      setUsers(usersRes.data);
-      setRoles(rolesRes.data);
-    } catch (err) {
-      setError(getErrorMessage(err));
+      if (controller.signal.aborted || getAuthVersion() !== authVersion) return;
+      setUsers(nextUsers);
+      setRoles(nextRoles);
+    } catch (error: unknown) {
+      if (controller.signal.aborted || getAuthVersion() !== authVersion) return;
+      setError(getErrorMessage(error));
     }
-  }
+  }, [authVersion]);
+
+  useEffect(() => subscribeToAccessToken(() => {
+    setAuthVersion(getAuthVersion());
+  }), []);
 
   useEffect(() => {
+    mountedRef.current = true;
     void loadUsersAndRoles();
-  }, []);
+    return () => {
+      mountedRef.current = false;
+      controllerRef.current?.abort();
+    };
+  }, [loadUsersAndRoles]);
 
   function toggleExpand(userId: string): void {
     setExpandedUserId((current) => (current === userId ? null : userId));
@@ -153,6 +156,7 @@ function AdminUsersPage() {
                     role="alert"
                   >
                     {error}
+                    <button type="button" onClick={() => void loadUsersAndRoles()} className="ml-3 underline">Retry loading users</button>
                   </motion.p>
                 )}
               </AnimatePresence>
@@ -217,3 +221,4 @@ function AdminUsersPage() {
 }
 
 export default AdminUsersPage;
+

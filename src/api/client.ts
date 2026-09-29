@@ -1,160 +1,208 @@
-import axios, { type InternalAxiosRequestConfig } from 'axios';
+import axios, {
+  type AxiosResponse,
+  type InternalAxiosRequestConfig,
+} from 'axios';
+import { isAccessTokenResponse } from '../auth/contracts';
+import { API_URL } from './config';
+import { getCsrfToken } from './csrf';
+import { isAuthRejection } from './errors';
 import {
   getAccessToken,
   getAuthVersion,
   setAccessToken,
   setRefreshedAccessToken,
 } from './tokenStore';
-import { getCsrfToken } from './csrf';
-import { isAccessTokenResponse } from './guards';
-import { API_URL } from './config';
+import { parseResponse } from './validation';
+
+export { API_URL } from './config';
+
 declare module 'axios' {
   export interface AxiosRequestConfig {
-    /** Keeps an old request from retrying with another session's credentials. */
     _authVersion?: number;
-    /** Internal: set once a request has already been retried after a 401 refresh, to prevent retry loops. */
     _retry?: boolean;
-    /** Internal: marks the /auth/refresh call itself, so its own 401 is never treated as "needs a refresh". */
     _isRefreshCall?: boolean;
   }
 }
 
+const cookieMutationPaths = new Set([
+  '/auth/login',
+  '/auth/refresh',
+  '/auth/2fa/verify',
+  '/auth/logout',
+]);
+
+// This transport runs inside a queue slot, without re-entering interceptors.
+const sessionTransport = axios.create({ baseURL: API_URL, withCredentials: true });
+const networkAdapter = axios.getAdapter(sessionTransport.defaults.adapter);
+let cookieOperationQueue: Promise<void> = Promise.resolve();
+let refreshRequest: { version: number; promise: Promise<string> } | null = null;
+let logoutRequest: { version: number; promise: Promise<void> } | null = null;
+
+function assertCurrentSession(version: number): void {
+  if (version !== getAuthVersion()) {
+    throw new axios.CanceledError('Authentication changed');
+  }
+}
+
+function enqueueCookieOperation<T>(
+  version: number,
+  operation: () => Promise<T>,
+): Promise<T> {
+  // Version checks protect JS state; serialization also orders Set-Cookie.
+  const request = cookieOperationQueue.then(async () => {
+    assertCurrentSession(version);
+    const response = await operation();
+    assertCurrentSession(version);
+    return response;
+  });
+  // Keep the queue usable after failure; the caller still receives rejection.
+  cookieOperationQueue = request.then(() => undefined, () => undefined);
+  return request;
+}
+
+function dispatchRequest(
+  config: InternalAxiosRequestConfig,
+): Promise<AxiosResponse<unknown>> {
+  const requestPath = config.url?.split('?')[0] ?? '';
+  if (config.method?.toLowerCase() === 'post' && cookieMutationPaths.has(requestPath)) {
+    return enqueueCookieOperation(
+      config._authVersion ?? getAuthVersion(),
+      () => networkAdapter(config),
+    );
+  }
+  return networkAdapter(config);
+}
+
 export const apiClient = axios.create({
   baseURL: API_URL,
-  // Required so the browser sends/receives the httpOnly refresh_token and
-  // (non-httpOnly) csrf_token cookies — see backend README "Cookies & CSRF".
   withCredentials: true,
+  adapter: dispatchRequest,
 });
 
-// Attach the in-memory access token to every outgoing request.
 apiClient.interceptors.request.use(
   (config: InternalAxiosRequestConfig) => {
     config._authVersion ??= getAuthVersion();
-    if (config._authVersion !== getAuthVersion()) {
-      throw new axios.CanceledError('Authentication changed');
-    }
-
+    assertCurrentSession(config._authVersion);
     const token = getAccessToken();
-    if (token) config.headers.set('Authorization', `Bearer ${token}`);
+    if (token) config.headers.set('Authorization', 'Bearer ' + token);
     return config;
   },
   (error: unknown) => { throw error; },
-  // Capture the session before a login/logout can run in another microtask.
   { synchronous: true },
 );
 
-// Coalesces concurrent refresh needs (e.g. several requests 401-ing at once,
-// or a 401-triggered refresh racing the app's own startup refresh) into a
-// single in-flight /auth/refresh call.
-let refreshRequest: {
-  version: number;
-  promise: Promise<string>;
-} | null = null;
+async function requestRefreshToken(): Promise<string> {
+  // Read CSRF at dispatch time, after preceding cookie mutations have settled.
+  const csrfToken = getCsrfToken();
+  const response = await sessionTransport.post<unknown>('/auth/refresh', {}, {
+    headers: csrfToken ? { 'X-CSRF-Token': csrfToken } : {},
+  });
+  return parseResponse(response.data, isAccessTokenResponse).accessToken;
+}
 
-/**
- * Calls POST /auth/refresh using the httpOnly refresh_token cookie + the
- * X-CSRF-Token header read from the (non-httpOnly) csrf_token cookie, and
- * stores the resulting access token. Exported so AuthProvider can call this
- * directly on app load to silently restore a session — the 401 interceptor
- * below only fires in response to an already-failed request, which doesn't
- * exist yet on first mount.
- */
-export async function refreshAccessToken(): Promise<string> {
+export function refreshAccessToken(): Promise<string> {
   const version = getAuthVersion();
+  if (logoutRequest?.version === version) {
+    return Promise.reject(new axios.CanceledError('Logout is in progress'));
+  }
   if (refreshRequest?.version === version) return refreshRequest.promise;
 
-  const promise = (async () => {
-    const csrfToken = getCsrfToken();
-
-    const response = await apiClient.post<unknown>(
-      '/auth/refresh',
-      {},
-      {
-        _isRefreshCall: true,
-        headers: csrfToken ? { 'X-CSRF-Token': csrfToken } : {},
-      },
-    );
-
-    if (version !== getAuthVersion()) {
-      throw new axios.CanceledError('Authentication changed');
-    }
-
-    if (!isAccessTokenResponse(response.data)) {
-      throw new Error('Unexpected refresh response');
-    }
-
-    setRefreshedAccessToken(response.data.accessToken);
-    return response.data.accessToken;
-  })().finally(() => {
-    if (refreshRequest?.promise === promise) refreshRequest = null;
-  });
+  const promise = enqueueCookieOperation(version, requestRefreshToken)
+    .then((token) => {
+      assertCurrentSession(version);
+      setRefreshedAccessToken(token);
+      return token;
+    })
+    .catch((error: unknown) => {
+      if (version === getAuthVersion() && isAuthRejection(error)) {
+        setAccessToken(null);
+      }
+      throw error;
+    })
+    .finally(() => {
+      if (refreshRequest?.promise === promise) refreshRequest = null;
+    });
 
   refreshRequest = { version, promise };
   return promise;
 }
+
 function isCurrentRequestToken(config: InternalAxiosRequestConfig): boolean {
   const token = getAccessToken();
   return config._authVersion === getAuthVersion() &&
     token !== null &&
-    config.headers.get('Authorization') === `Bearer ${token}`;
+    config.headers.get('Authorization') === 'Bearer ' + token;
 }
 
-async function retryAuthenticatedRequest(config: InternalAxiosRequestConfig) {
-  const version = getAuthVersion();
+async function retryAuthenticatedRequest(
+  config: InternalAxiosRequestConfig,
+): Promise<AxiosResponse<unknown>> {
   config._retry = true;
-
-  // Another request may already have rotated the token within this session.
-  if (getAccessToken() && !isCurrentRequestToken(config)) {
-    return apiClient<unknown>(config);
-  }
-
-  try {
+  if (!getAccessToken() || isCurrentRequestToken(config)) {
     await refreshAccessToken();
-  } catch (refreshError: unknown) {
-    if (version === getAuthVersion()) setAccessToken(null);
-    throw refreshError;
   }
-
   return apiClient<unknown>(config);
 }
 
-// On a 401 from a request that WAS carrying an access token: try exactly
-// one silent refresh + one retry. A 401 from a request with no
-// Authorization header (e.g. /auth/login with wrong credentials,
-// /auth/register, /auth/verify-email, ...) means something else entirely
-// (bad credentials, bad token) and must never trigger a refresh attempt —
-// otherwise a wrong-password error gets silently replaced by whatever the
-// refresh call itself fails with instead. If the refresh call succeeds but
-// we've already retried once, or the refresh call itself 401s, give up and
-// clear the in-memory token — AuthContext is subscribed to tokenStore and
-// will react by treating the user as logged out.
 apiClient.interceptors.response.use(
-  (response) => response,
-  async (error: unknown) => {
-    // قد يأتي الخطأ من كود التطبيق أو interceptor آخر.
-    // لا نقرأ config أو response قبل التأكد من أنه خطأ Axios.
-    if (!axios.isAxiosError<unknown, unknown>(error)) {
-      return Promise.reject(error);
+  (response: AxiosResponse<unknown>) => {
+    if (response.config._authVersion !== undefined) {
+      assertCurrentSession(response.config._authVersion);
     }
-
+    return response;
+  },
+  async (error: unknown) => {
+    if (!axios.isAxiosError<unknown, unknown>(error)) throw error;
     const config = error.config;
-    if (
-      error.response?.status !== 401 ||
-      !config ||
-      !config.headers.get('Authorization')
-    ) {
+    if (!config) throw error;
+    if (config._authVersion !== undefined) assertCurrentSession(config._authVersion);
+    if (error.response?.status !== 401 || !config.headers.get('Authorization')) {
       throw error;
     }
-
-    if (config._authVersion !== getAuthVersion()) {
-      throw new axios.CanceledError('Authentication changed');
-    }
-
-    // The caller owns refresh failure cleanup and its captured auth version.
     if (config._isRefreshCall) throw error;
     if (!config._retry) return retryAuthenticatedRequest(config);
-
     if (isCurrentRequestToken(config)) setAccessToken(null);
     throw error;
   },
 );
+
+async function revokeSession(token: string | null, version: number): Promise<void> {
+  assertCurrentSession(version);
+  try {
+    await sessionTransport.post<unknown>('/auth/logout', {}, {
+      headers: token ? { Authorization: 'Bearer ' + token } : {},
+    });
+  } catch (error: unknown) {
+    if (!axios.isAxiosError<unknown, unknown>(error) || error.response?.status !== 401) {
+      throw error;
+    }
+    assertCurrentSession(version);
+    const refreshedToken = await requestRefreshToken();
+    assertCurrentSession(version);
+    // Revocation credentials must never restore the locally signed-out session.
+    await sessionTransport.post<unknown>('/auth/logout', {}, {
+      headers: { Authorization: 'Bearer ' + refreshedToken },
+    });
+  }
+}
+
+export function logoutSession(): Promise<void> {
+  if (logoutRequest?.version === getAuthVersion()) return logoutRequest.promise;
+  const token = getAccessToken();
+  setAccessToken(null);
+  const version = getAuthVersion();
+  const promise = enqueueCookieOperation(version, () => revokeSession(token, version))
+    .finally(() => {
+      if (logoutRequest?.promise === promise) logoutRequest = null;
+    });
+  logoutRequest = { version, promise };
+  return promise;
+}
+
+export function startUserGoogleLogin(): void {
+  window.location.assign(API_URL + '/auth/google');
+}
+
+export function startUserGithubLogin(): void {
+  window.location.assign(API_URL + '/auth/github');
+}

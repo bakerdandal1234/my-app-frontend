@@ -2,14 +2,14 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { Button } from '@heroui/react';
 import { useState } from 'react';
 import { useToast } from '../../ui/ToastContext';
-import { apiClient } from '../../api/client';
+import { assignRoleToUser, removeRoleFromUser } from '../../auth/authorization-api';
 import { adminListErrorVariants as errorVariants } from '../../lib/motion-variants';
-import type { RoleItem } from '../../api/guards';
+import type { RoleSummary } from '../../auth/authorization-contracts';
 import { useUserAccess } from './useUserAccess';
 
 interface AdminUserAccessPanelProps {
   userId: string;
-  roles: RoleItem[];
+  roles: RoleSummary[];
 }
 
 /**
@@ -21,7 +21,7 @@ interface AdminUserAccessPanelProps {
  */
 function AdminUserAccessPanel({ userId, roles }: AdminUserAccessPanelProps) {
   const { showToast } = useToast();
-  const { access, accessError, isMutating, mutate } = useUserAccess(userId);
+  const { access, accessError, mutationError, isLoading, isMutating, reload, mutate } = useUserAccess(userId);
   const [selectedRoleId, setSelectedRoleId] = useState('');
 
   const assignableRoles =
@@ -33,25 +33,23 @@ function AdminUserAccessPanel({ userId, roles }: AdminUserAccessPanelProps) {
     const role = roles.find((item) => item.id === selectedRoleId);
     if (!role) return;
 
-    const ok = await mutate(() =>
-      apiClient.post<unknown>(`/authorization/users/${userId}/roles/${role.id}`),
-    );
-
-    if (ok) {
-      setSelectedRoleId('');
-      showToast(`Assigned "${role.name}" role`);
-    }
+    await mutate({
+      request: () => assignRoleToUser(userId, role.id),
+      onSaved: () => {
+        setSelectedRoleId('');
+        showToast(`Assigned "${role.name}" role`);
+      },
+    });
   }
 
   async function handleRemoveRole(roleName: string): Promise<void> {
     const role = roles.find((item) => item.name === roleName);
     if (!role) return;
 
-    const ok = await mutate(() =>
-      apiClient.delete<unknown>(`/authorization/users/${userId}/roles/${role.id}`),
-    );
-
-    if (ok) showToast(`Removed "${roleName}" role`);
+    await mutate({
+      request: () => removeRoleFromUser(userId, role.id),
+      onSaved: () => showToast(`Removed "${roleName}" role`),
+    });
   }
 
   return (
@@ -69,12 +67,19 @@ function AdminUserAccessPanel({ userId, roles }: AdminUserAccessPanelProps) {
             role="alert"
           >
             {accessError}
+            <button type="button" onClick={() => void reload()} disabled={isLoading || isMutating} className="ml-3 underline disabled:opacity-50">
+              Retry loading access
+            </button>
           </motion.p>
         )}
       </AnimatePresence>
 
+      {mutationError && (
+        <p role="alert" className="mb-4 text-xs text-red-200">{mutationError}</p>
+      )}
+
       {/* Loading Roles */}
-      {!access && !accessError && (
+      {isLoading && (
         <div className="flex items-center gap-3 py-4">
           <div className="h-4 w-4 animate-spin rounded-full border-2 border-white/10 border-t-indigo-400" />
 

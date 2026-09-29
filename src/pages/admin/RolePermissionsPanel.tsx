@@ -1,15 +1,14 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import { Button } from '@heroui/react';
-import type { PermissionItem, RoleItem } from '../../api/guards';
+import type { PermissionItem, RoleItem } from '../../auth/authorization-contracts';
 import { formatPermission } from '../../auth/permissions';
 
 interface RolePermissionsPanelProps {
   role: RoleItem;
   permissions: PermissionItem[];
   isMutating: boolean;
-  /** Performs the POST and returns whether it succeeded, so this panel knows whether to clear its selection. */
-  onAssign: (roleId: string, permissionId: string) => Promise<boolean>;
+  onAssign: (roleId: string, permissionId: string, onSaved: () => void) => Promise<void>;
   onRemove: (roleId: string, permissionId: string, label: string) => Promise<void>;
 }
 
@@ -26,6 +25,12 @@ function RolePermissionsPanel({
   onRemove,
 }: RolePermissionsPanelProps) {
   const [selectedPermissionId, setSelectedPermissionId] = useState('');
+  const mountedRef = useRef(false);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
 
   const assignedIds = new Set(
     role.rolePermissions.map((rolePermission) => rolePermission.permissionId),
@@ -36,10 +41,10 @@ function RolePermissionsPanel({
   );
 
   async function handleAssign(): Promise<void> {
-    if (!selectedPermissionId) return;
-
-    const ok = await onAssign(role.id, selectedPermissionId);
-    if (ok) setSelectedPermissionId('');
+    if (isMutating || !assignablePermissions.some((item) => item.id === selectedPermissionId)) return;
+    await onAssign(role.id, selectedPermissionId, () => {
+      if (mountedRef.current) setSelectedPermissionId('');
+    });
   }
 
   return (
@@ -105,6 +110,8 @@ function RolePermissionsPanel({
 
           <div className="flex flex-col gap-2 sm:flex-row">
             <select
+              aria-label={`Available permissions for ${role.name}`}
+              disabled={isMutating}
               value={selectedPermissionId}
               onChange={(event) =>
                 setSelectedPermissionId(event.target.value)
@@ -124,7 +131,7 @@ function RolePermissionsPanel({
               type="button"
               variant="primary"
               onPress={handleAssign}
-              isDisabled={!selectedPermissionId || isMutating}
+              isDisabled={!assignablePermissions.some((item) => item.id === selectedPermissionId) || isMutating}
               className="bg-indigo-600 text-white hover:bg-indigo-500"
             >
               {isMutating ? 'Assigning…' : 'Assign'}

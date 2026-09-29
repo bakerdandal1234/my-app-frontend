@@ -1,29 +1,16 @@
-import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { Button, Card } from '@heroui/react';
 import { motion, AnimatePresence, type Variants } from 'framer-motion';
-import { apiClient, refreshAccessToken } from '../../api/client';
-import { getAuthVersion, setAccessToken } from '../../api/tokenStore';
-import { getErrorMessage, isAuthRejection } from '../../api/errors';
-import { useAuth } from '../../auth/AuthContext';
+import { useSessions } from '../../auth/useSessions';
 import AnimatedBackground, {
   type AnimatedBackgroundBlob,
 } from '../../components/layout/AnimatedBackground';
 import GlassCard from '../../components/shared/GlassCard';
 import { containerVariants, itemVariants, errorVariants } from '../../lib/motion-variants';
 import BackLink from '../../components/shared/BackLink';
-import {
-  isSessionItemArray,
-  type SessionItem,
-} from '../../api/guards';
-/** Mirrors SafeSession from the backend's session.controller.ts. */
-
-
 
 function formatDate(value?: string | null): string {
   return value ? new Date(value).toLocaleString() : '—';
 }
-// --- Motion Variants ---
 
 const sessionVariants: Variants = {
   hidden: {
@@ -62,82 +49,17 @@ const SESSIONS_BACKGROUND_BLOBS: AnimatedBackgroundBlob[] = [
 ];
 
 function SessionsPage() {
-  const { logout } = useAuth();
-  const navigate = useNavigate();
-
-  const [sessions, setSessions] =
-    useState<SessionItem[] | null>(null);
-
-  const [error, setError] = useState<string | null>(null);
-  const [revokingId, setRevokingId] =
-    useState<string | null>(null);
-  const [revokingAll, setRevokingAll] = useState(false);
-
-  async function loadSessions(): Promise<void> {
-    setError(null);
-
-    try {
-      const res = await apiClient.get<unknown>('/sessions');
-
-      if (!isSessionItemArray(res.data)) {
-        throw new Error('Unexpected sessions response');
-      }
-
-      setSessions(res.data);
-    } catch (err: unknown) {
-      setError(getErrorMessage(err));
-    }
-  }
-
-  useEffect(() => {
-    loadSessions();
-  }, []);
-
-  async function handleRevoke(id: string) {
-    const version = getAuthVersion();
-    setRevokingId(id);
-    setError(null);
-
-    try {
-      await apiClient.delete(`/sessions/${id}`);
-      if (version !== getAuthVersion()) return;
-      await loadSessions();
-      if (version !== getAuthVersion()) return;
-
-      // Revoking may have ended this browser's own session, and a refresh
-      // tells us: if the server rejects it (401/403) we are signed out. Any
-      // other failure (network drop, 5xx) proves nothing, so stay signed in;
-      // the next authenticated request re-checks via the 401 interceptor.
-      try {
-        await refreshAccessToken();
-      } catch (refreshError: unknown) {
-        if (version === getAuthVersion() && isAuthRejection(refreshError)) {
-          setAccessToken(null);
-          navigate('/login');
-        }
-      }
-    } catch (err) {
-      setError(getErrorMessage(err));
-    } finally {
-      setRevokingId(null);
-    }
-  }
-
-  async function handleRevokeAll() {
-    const version = getAuthVersion();
-    setRevokingAll(true);
-    setError(null);
-
-    try {
-      await apiClient.delete('/sessions');
-      if (version !== getAuthVersion()) return;
-
-      await logout();
-    } catch (err) {
-      setError(getErrorMessage(err));
-      setRevokingAll(false);
-    }
-  }
+  const {
+    sessions,
+    error,
+    isLoading,
+    revokingId,
+    revokingAll,
+    reload,
+    revoke,
+    revokeAll,
+  } = useSessions();
+  const isBusy = isLoading || revokingId !== null || revokingAll;
 
   const activeSessions =
     sessions?.filter((session) => !session.revokedAt) ?? [];
@@ -219,8 +141,19 @@ function SessionsPage() {
                 )}
               </AnimatePresence>
 
+              {error && (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  isDisabled={isBusy}
+                  onPress={() => { void reload(); }}
+                >
+                  Retry loading sessions
+                </Button>
+              )}
+
               {/* Loading */}
-              {sessions === null && !error && (
+              {isLoading && (
                 <motion.div
                   variants={itemVariants}
                   className="flex flex-col items-center justify-center py-12"
@@ -234,7 +167,7 @@ function SessionsPage() {
               )}
 
               {/* Empty */}
-              {sessions && sessions.length === 0 && (
+              {!isLoading && sessions && sessions.length === 0 && (
                 <motion.div
                   variants={itemVariants}
                   className="rounded-xl border border-white/10 bg-black/10 px-6 py-10 text-center"
@@ -251,7 +184,7 @@ function SessionsPage() {
               )}
 
               {/* Sessions */}
-              {sessions && sessions.length > 0 && (
+              {!isLoading && sessions && sessions.length > 0 && (
                 <motion.ul
                   className="flex flex-col gap-3"
                   variants={containerVariants}
@@ -266,30 +199,33 @@ function SessionsPage() {
                         whileHover={
                           !isRevoked
                             ? {
-                              y: -2,
-                            }
+                                y: -2,
+                              }
                             : undefined
                         }
-                        className={`rounded-xl border p-4 transition-colors ${isRevoked
+                        className={`rounded-xl border p-4 transition-colors ${
+                          isRevoked
                             ? 'border-white/5 bg-black/10 opacity-70'
                             : 'border-white/10 bg-white/5 hover:border-indigo-500/20 hover:bg-white/[0.07]'
-                          }`}
+                        }`}
                       >
                         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                           {/* Session information */}
                           <div className="min-w-0 flex-1">
                             <div className="flex items-center gap-3">
                               <div
-                                className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${isRevoked
+                                className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${
+                                  isRevoked
                                     ? 'bg-slate-500/10'
                                     : 'bg-indigo-500/10'
-                                  }`}
+                                }`}
                               >
                                 <span
-                                  className={`text-lg ${isRevoked
+                                  className={`text-lg ${
+                                    isRevoked
                                       ? 'text-slate-500'
                                       : 'text-indigo-400'
-                                    }`}
+                                  }`}
                                 >
                                   {isRevoked ? '×' : '●'}
                                 </span>
@@ -376,8 +312,9 @@ function SessionsPage() {
                                 isPending={
                                   revokingId === session.id
                                 }
+                                isDisabled={isBusy}
                                 onPress={() =>
-                                  handleRevoke(session.id)
+                                  void revoke(session.id)
                                 }
                               >
                                 {revokingId === session.id
@@ -400,23 +337,24 @@ function SessionsPage() {
                 {sessions.some(
                   (session) => !session.revokedAt,
                 ) && (
-                    <motion.div
-                      variants={itemVariants}
-                      className="w-full"
+                  <motion.div
+                    variants={itemVariants}
+                    className="w-full"
+                  >
+                    <Button
+                      type="button"
+                      variant="danger"
+                      fullWidth
+                      isPending={revokingAll}
+                      isDisabled={isBusy}
+                      onPress={() => { void revokeAll(); }}
                     >
-                      <Button
-                        type="button"
-                        variant="danger"
-                        fullWidth
-                        isPending={revokingAll}
-                        onPress={handleRevokeAll}
-                      >
-                        {revokingAll
-                          ? 'Revoking all…'
-                          : 'Revoke all sessions (log out everywhere)'}
-                      </Button>
-                    </motion.div>
-                  )}
+                      {revokingAll
+                        ? 'Revoking all…'
+                        : 'Revoke all sessions (log out everywhere)'}
+                    </Button>
+                  </motion.div>
+                )}
               </Card.Footer>
             )}
           </GlassCard>

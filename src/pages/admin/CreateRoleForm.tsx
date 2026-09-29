@@ -6,12 +6,12 @@ import { roleSchema, type RoleFormValues } from './role-schema';
 
 interface CreateRoleFormProps {
   show: boolean;
-  /** Returns whether the create succeeded, so this form knows whether to reset itself. */
-  onCreate: (values: RoleFormValues) => Promise<boolean>;
+  disabled: boolean;
+  onCreate: (values: RoleFormValues, onSaved: () => void) => Promise<void>;
 }
 
 /** The collapsible "create new role" form shown above the role list. */
-function CreateRoleForm({ show, onCreate }: CreateRoleFormProps) {
+function CreateRoleForm({ show, disabled, onCreate }: CreateRoleFormProps) {
   const form = useForm<RoleFormValues>({
     resolver: zodResolver(roleSchema),
     defaultValues: {
@@ -21,8 +21,8 @@ function CreateRoleForm({ show, onCreate }: CreateRoleFormProps) {
   });
 
   async function onSubmit(values: RoleFormValues): Promise<void> {
-    const ok = await onCreate(values);
-    if (ok) form.reset();
+    if (disabled) return;
+    await onCreate(values, () => form.reset());
   }
 
   return (
@@ -36,7 +36,7 @@ function CreateRoleForm({ show, onCreate }: CreateRoleFormProps) {
           onSubmit={form.handleSubmit(onSubmit)}
           className="mb-6 overflow-hidden"
         >
-          <div className="rounded-xl border border-white/10 bg-slate-900/60 p-4">
+          <fieldset disabled={disabled || form.formState.isSubmitting} className="rounded-xl border border-white/10 bg-slate-900/60 p-4">
             <div className="mb-4">
               <h3 className="text-sm font-semibold text-white">
                 Create new role
@@ -97,13 +97,13 @@ function CreateRoleForm({ show, onCreate }: CreateRoleFormProps) {
               <Button
                 type="submit"
                 variant="primary"
-                isDisabled={form.formState.isSubmitting}
+                isDisabled={disabled || form.formState.isSubmitting}
                 className="bg-indigo-600 text-white hover:bg-indigo-500"
               >
                 {form.formState.isSubmitting ? 'Creating…' : 'Create role'}
               </Button>
             </div>
-          </div>
+          </fieldset>
         </motion.form>
       )}
     </AnimatePresence>

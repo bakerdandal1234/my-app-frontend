@@ -19,6 +19,8 @@ import ChangePasswordPage from '././pages/user/ChangePasswordPage';
 import AuthenticatedLayout from './components/layout/AuthenticatedLayout';
 import LandingPage from './pages/LandingPage';
 import { PERMISSIONS } from './auth/permissions';
+import SetPasswordPage from './pages/user/SetPasswordPage';
+import LoginHistoryPage from './pages/user/LoginHistoryPage';
 function App() {
   return (
     <Routes>
@@ -34,8 +36,10 @@ function App() {
         <Route element={<AuthenticatedLayout />}>
           <Route path="/settings/2fa" element={<TwoFactorSetupPage />} />
           <Route path="/settings/change-password" element={<ChangePasswordPage />} />
+          <Route path="/settings/set-password" element={<SetPasswordPage />} />
           <Route path="/profile" element={<ProfilePage />} />
           <Route path="/sessions" element={<SessionsPage />} />
+          <Route path="/login-history" element={<LoginHistoryPage />} />
           <Route path="/home" element={<HomePage />} />
 
           <Route element={<RequirePermissionRoute permission={PERMISSIONS.ROLES_READ} />}>

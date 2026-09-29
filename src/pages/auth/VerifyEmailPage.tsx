@@ -1,9 +1,7 @@
-import { useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Card, Spinner } from '@heroui/react';
 import { AnimatePresence, motion, type Variants } from 'framer-motion';
-import { apiClient } from '../../api/client';
-import { getErrorMessage } from '../../api/errors';
+import { useEmailVerification } from '../../auth/useEmailVerification';
 import AnimatedBackground, {
   type AnimatedBackgroundBlob,
   type AnimatedBackgroundPulseBlob,
@@ -16,8 +14,6 @@ import {
   statusItemVariants as itemVariants,
   statusIconVariants as iconVariants,
 } from '../../lib/motion-variants';
-import { isMessageResponse } from '../../api/guards';
-type Status = 'loading' | 'success' | 'error';
 
 // containerVariants / itemVariants / iconVariants now come from the shared
 // ../../lib/motion-variants (this "status page" family is also used by
@@ -71,48 +67,7 @@ function VerifyEmailPage() {
   const [searchParams] = useSearchParams();
   const token = searchParams.get('token');
 
-  const [status, setStatus] = useState<Status>('loading');
-  const [message, setMessage] = useState<string | null>(null);
-  const requestedTokenRef = useRef<string | null>(null);
-
-  useEffect(() => {
-    if (!token) {
-      setStatus('error');
-      setMessage('This verification link is missing its token.');
-      return;
-    }
-
-    // The backend clears the token on first use, so a second request for the
-    // same token gets a 400. StrictMode (dev) runs effects twice, so send the
-    // request once per token and let its result through.
-    if (requestedTokenRef.current === token) return;
-    requestedTokenRef.current = token;
-
-    (async () => {
-      try {
-        const res = await apiClient.get<unknown>(
-          '/auth/verify-email',
-          { params: { token } },
-        );
-
-        if (requestedTokenRef.current !== token) return;
-
-        if (!isMessageResponse(res.data)) {
-          throw new Error('Unexpected email verification response');
-        }
-
-        setStatus('success');
-        setMessage(
-          res.data.message ?? 'Your email has been verified.',
-        );
-      } catch (err: unknown) {
-        if (requestedTokenRef.current !== token) return;
-
-        setStatus('error');
-        setMessage(getErrorMessage(err));
-      }
-    })();
-  }, [token]);
+  const { status, message } = useEmailVerification(token);
 
   return (
     <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-slate-950 px-4 text-white">

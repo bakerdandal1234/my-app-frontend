@@ -1,105 +1,119 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { apiClient } from '../../api/client';
 import { getErrorMessage } from '../../api/errors';
-import { isUserAccess, type UserAccess } from '../../api/guards';
+import { getUserAccess } from '../../auth/authorization-api';
+import type { UserAccess } from '../../auth/authorization-contracts';
+import { getAuthVersion, subscribeToAccessToken } from '../../api/tokenStore';
 
-interface UseUserAccessResult {
-  access: UserAccess | null;
-  accessError: string | null;
-  isMutating: boolean;
-  /**
-   * Runs `mutation` (an assign/remove-role call), then reloads access on
-   * success. Returns whether it succeeded, so the caller can show its own
-   * toast with the right message (the hook doesn't know "assigned" from
-   * "removed").
-   */
-  mutate: (mutation: () => Promise<unknown>) => Promise<boolean>;
+interface AccessScope {
+  userId: string;
+  authVersion: number;
+  active: boolean;
+  ready: boolean;
+  mutating: boolean;
+  needsRefresh: boolean;
+  controller: AbortController | null;
 }
 
-/**
- * Loads GET /authorization/users/:userId/access for one user and exposes
- * a mutate() for role assign/remove that reloads it afterward.
- *
- * Only meant to be used by a component that mounts for exactly one userId
- * and unmounts when the access panel closes or switches to a different
- * user (see AdminUserRow) — that mount/unmount boundary is what used to
- * be tracked by hand with four refs (selectionRef, accessRequestIdRef,
- * mutationPendingRef, mountedRef) in the original single-page version.
- * Here, closing/switching the panel unmounts this hook's component, which
- * aborts the in-flight request via AbortController and drops any state
- * update that would otherwise land on a closed or stale panel.
- */
-export function useUserAccess(userId: string): UseUserAccessResult {
+interface AccessMutation {
+  request: () => Promise<void>;
+  onSaved: () => void;
+}
+
+export function useUserAccess(userId: string) {
+  const [authVersion, setAuthVersion] = useState(getAuthVersion);
   const [access, setAccess] = useState<UserAccess | null>(null);
   const [accessError, setAccessError] = useState<string | null>(null);
+  const [mutationError, setMutationError] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
   const [isMutating, setIsMutating] = useState(false);
+  const scopeRef = useRef<AccessScope | null>(null);
 
-  // Guards against a double-click firing a second mutation while the
-  // first is still in flight (isMutating alone can't, since it's only
-  // visible after the next render).
-  const mutationPendingRef = useRef(false);
+  const isCurrent = useCallback((scope: AccessScope) =>
+    scope.active &&
+    scopeRef.current === scope &&
+    getAuthVersion() === scope.authVersion, []);
 
-  const load = useCallback(
-    async (signal: AbortSignal): Promise<void> => {
-      setAccess(null);
-      setAccessError(null);
+  const loadAccess = useCallback(async (scope: AccessScope): Promise<void> => {
+    if (!isCurrent(scope)) return;
+    scope.controller?.abort();
+    const controller = new AbortController();
+    scope.controller = controller;
+    scope.ready = false;
+    setAccess(null);
+    setAccessError(null);
+    setIsLoading(true);
 
-      try {
-        const response = await apiClient.get<unknown>(
-          `/authorization/users/${userId}/access`,
-          { signal },
-        );
+    try {
+      const nextAccess = await getUserAccess(scope.userId, { signal: controller.signal });
+      if (!isCurrent(scope) || controller.signal.aborted) return;
+      scope.ready = true;
+      scope.needsRefresh = false;
+      setAccess(nextAccess);
+    } catch (error: unknown) {
+      if (!isCurrent(scope) || controller.signal.aborted) return;
+      const message = getErrorMessage(error);
+      setAccessError(scope.needsRefresh
+        ? `Role change saved, but access could not be refreshed. ${message}`
+        : message);
+    } finally {
+      if (isCurrent(scope) && !controller.signal.aborted) setIsLoading(false);
+    }
+  }, [isCurrent]);
 
-        if (
-          !isUserAccess(response.data) ||
-          response.data.userId !== userId
-        ) {
-          throw new Error('Unexpected user access response');
-        }
-
-        setAccess(response.data);
-      } catch (err: unknown) {
-        if (signal.aborted) return;
-        setAccessError(getErrorMessage(err));
-      }
-    },
-    [userId],
-  );
+  useEffect(() => subscribeToAccessToken(() => {
+    setAuthVersion(getAuthVersion());
+  }), []);
 
   useEffect(() => {
-    const controller = new AbortController();
-    void load(controller.signal);
+    const scope: AccessScope = {
+      userId, authVersion, active: true, ready: false, mutating: false,
+      needsRefresh: false, controller: null,
+    };
+    scopeRef.current = scope;
+    setMutationError(null);
+    setIsMutating(false);
+    void loadAccess(scope);
 
     return () => {
-      controller.abort();
+      scope.active = false;
+      scope.controller?.abort();
     };
-  }, [load]);
+  }, [userId, authVersion, loadAccess]);
 
-  const mutate = useCallback(
-    async (mutation: () => Promise<unknown>): Promise<boolean> => {
-      if (mutationPendingRef.current) return false;
+  const reload = useCallback(async (): Promise<void> => {
+    const scope = scopeRef.current;
+    if (!scope || !isCurrent(scope) || scope.mutating) return;
+    await loadAccess(scope);
+  }, [isCurrent, loadAccess]);
 
-      mutationPendingRef.current = true;
-      setIsMutating(true);
-      setAccessError(null);
+  async function mutate({ request, onSaved }: AccessMutation): Promise<void> {
+    const scope = scopeRef.current;
+    if (!scope || scope.userId !== userId || !isCurrent(scope) ||
+        !scope.ready || scope.mutating) return;
 
-      try {
-        await mutation();
-
-        const controller = new AbortController();
-        await load(controller.signal);
-
-        return true;
-      } catch (err: unknown) {
-        setAccessError(getErrorMessage(err));
-        return false;
-      } finally {
-        mutationPendingRef.current = false;
+    scope.mutating = true;
+    setIsMutating(true);
+    setMutationError(null);
+    try {
+      await request();
+    } catch (error: unknown) {
+      if (isCurrent(scope)) {
+        setMutationError(getErrorMessage(error));
+        scope.mutating = false;
         setIsMutating(false);
       }
-    },
-    [load],
-  );
+      return;
+    }
 
-  return { access, accessError, isMutating, mutate };
+    if (!isCurrent(scope)) return;
+    scope.needsRefresh = true;
+    onSaved();
+    await loadAccess(scope);
+    if (isCurrent(scope)) {
+      scope.mutating = false;
+      setIsMutating(false);
+    }
+  }
+
+  return { access, accessError, mutationError, isLoading, isMutating, reload, mutate };
 }

@@ -1,7 +1,7 @@
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import type { UseFormReturn } from 'react-hook-form';
 import { Button, Input } from '@heroui/react';
-import type { PermissionItem, RoleItem } from '../../api/guards';
+import type { PermissionItem, RoleItem } from '../../auth/authorization-contracts';
 import { itemVariants } from '../../lib/motion-variants';
 import type { RoleFormValues } from './role-schema';
 import RolePermissionsPanel from './RolePermissionsPanel';
@@ -18,7 +18,7 @@ interface RoleRowProps {
   onSaveEdit: (values: RoleFormValues) => Promise<void>;
   onDelete: () => void;
   onToggleExpand: () => void;
-  onAssignPermission: (roleId: string, permissionId: string) => Promise<boolean>;
+  onAssignPermission: (roleId: string, permissionId: string, onSaved: () => void) => Promise<void>;
   onRemovePermission: (
     roleId: string,
     permissionId: string,
@@ -56,6 +56,7 @@ function RoleRow({
       {/* Role Row */}
       {isEditing ? (
         <form onSubmit={editForm.handleSubmit(onSaveEdit)} className="p-4">
+          <fieldset disabled={isMutating || editForm.formState.isSubmitting}>
           <div className="grid gap-4 sm:grid-cols-2">
             <div>
               <label
@@ -91,6 +92,9 @@ function RoleRow({
                 {...editForm.register('description')}
                 className="text-black"
               />
+              {editForm.formState.errors.description && (
+                <p className="mt-1.5 text-xs text-red-300">{editForm.formState.errors.description.message}</p>
+              )}
             </div>
           </div>
 
@@ -98,7 +102,7 @@ function RoleRow({
             <Button
               type="submit"
               variant="primary"
-              isDisabled={editForm.formState.isSubmitting}
+              isDisabled={isMutating || editForm.formState.isSubmitting}
               className="bg-indigo-600 text-white hover:bg-indigo-500"
             >
               {editForm.formState.isSubmitting ? 'Saving…' : 'Save'}
@@ -108,17 +112,21 @@ function RoleRow({
               type="button"
               variant="ghost"
               onPress={onCancelEdit}
+              isDisabled={isMutating}
               className="text-slate-300 hover:bg-white/10 hover:text-white"
             >
               Cancel
             </Button>
           </div>
+          </fieldset>
         </form>
       ) : (
         <div className="flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:justify-between">
           <button
             type="button"
             onClick={onToggleExpand}
+            disabled={isMutating}
+            aria-expanded={isExpanded}
             className="min-w-0 text-left"
           >
             <div className="flex items-center gap-3">
@@ -142,6 +150,8 @@ function RoleRow({
             <button
               type="button"
               onClick={onToggleExpand}
+              disabled={isMutating}
+              aria-expanded={isExpanded}
               className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs font-medium text-indigo-300 transition-colors hover:bg-indigo-500/10 hover:text-indigo-200"
             >
               {isExpanded ? 'Hide permissions' : 'Manage permissions'}
@@ -150,6 +160,7 @@ function RoleRow({
             <button
               type="button"
               onClick={onStartEdit}
+              disabled={isMutating}
               className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs font-medium text-slate-300 transition-colors hover:bg-white/10 hover:text-white"
             >
               Edit
@@ -158,6 +169,7 @@ function RoleRow({
             <button
               type="button"
               onClick={onDelete}
+              disabled={isMutating}
               className="rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs font-medium text-red-300 transition-colors hover:bg-red-500/20 hover:text-red-200"
             >
               Delete
@@ -167,12 +179,10 @@ function RoleRow({
       )}
 
       {/* Permissions Panel */}
-      <AnimatePresence initial={false}>
         {isExpanded && (
           <motion.div
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: 'auto' }}
-            exit={{ opacity: 0, height: 0 }}
             transition={{ duration: 0.25 }}
             className="overflow-hidden"
           >
@@ -185,7 +195,6 @@ function RoleRow({
             />
           </motion.div>
         )}
-      </AnimatePresence>
     </motion.div>
   );
 }

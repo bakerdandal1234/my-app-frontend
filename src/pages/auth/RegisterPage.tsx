@@ -5,21 +5,18 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { Button, Card } from '@heroui/react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { apiClient } from '../../api/client';
+import { register as registerAccount } from '../../auth/api';
 import { getErrorMessage } from '../../api/errors';
 import AuthPageShell from '../../components/layout/AuthPageShell';
 import GlassCard from '../../components/shared/GlassCard';
 import FormField from '../../components/shared/FormField';
 import FormErrorBanner from '../../components/shared/FormErrorBanner';
 import { containerVariants, itemVariants } from '../../lib/motion-variants';
-import { passwordSchema } from '../../lib/validation';
+import { emailSchema, passwordSchema } from '../../lib/validation';
 
 const registerSchema = z
   .object({
-    email: z
-      .string()
-      .min(1, 'Email is required.')
-      .email('Please enter a valid email address.'),
+    email: emailSchema,
 
     firstName: z
       .string()
@@ -54,7 +51,7 @@ function RegisterPage() {
     formState: { errors, isSubmitting },
   } = useForm<RegisterFormValues>({
     resolver: zodResolver(registerSchema),
-    mode:"onChange",
+    mode: 'onChange',
     defaultValues: {
       email: '',
       firstName: '',
@@ -68,17 +65,15 @@ function RegisterPage() {
     setApiError(null);
 
     try {
-      await apiClient.post('/auth/register', {
+      await registerAccount({
         email: values.email,
         password: values.password,
-        // Both are required by CreateUserDto (@IsNotEmpty) and validated as
-        // non-empty above, so they are always sent — no conditional spread.
         firstName: values.firstName,
         lastName: values.lastName,
       });
 
       setRegisteredEmail(values.email);
-    } catch (err) {
+    } catch (err: unknown) {
       setApiError(getErrorMessage(err));
     }
   }
@@ -133,6 +128,7 @@ function RegisterPage() {
         ) : (
           <motion.form
             key="register-form"
+            noValidate
             onSubmit={handleSubmit(onSubmit)}
             className="w-full max-w-sm"
             variants={containerVariants}
@@ -156,7 +152,8 @@ function RegisterPage() {
                 <FormField
                   id="email"
                   label="Email"
-                  type="text"
+                  type="email"
+                  autoComplete="email"
                   registration={register('email')}
                   error={errors.email}
                 />
@@ -167,6 +164,7 @@ function RegisterPage() {
                   <FormField
                     id="firstName"
                     label="First name"
+                    autoComplete="given-name"
                     registration={register('firstName')}
                     error={errors.firstName}
                   />
@@ -174,6 +172,7 @@ function RegisterPage() {
                   <FormField
                     id="lastName"
                     label="Last name"
+                    autoComplete="family-name"
                     registration={register('lastName')}
                     error={errors.lastName}
                   />
@@ -185,6 +184,7 @@ function RegisterPage() {
                   id="password"
                   label="Password"
                   type="password"
+                  autoComplete="new-password"
                   registration={register('password')}
                   error={errors.password}
                   helperText="8+ characters, with uppercase, lowercase, and a number or symbol."
@@ -196,6 +196,7 @@ function RegisterPage() {
                   id="confirmPassword"
                   label="Confirm password"
                   type="password"
+                  autoComplete="new-password"
                   registration={register('confirmPassword')}
                   error={errors.confirmPassword}
                 />
@@ -214,6 +215,7 @@ function RegisterPage() {
                     type="submit"
                     fullWidth
                     isPending={isSubmitting}
+                    isDisabled={isSubmitting}
                     className="shadow-lg shadow-indigo-500/25"
                   >
                     {isSubmitting

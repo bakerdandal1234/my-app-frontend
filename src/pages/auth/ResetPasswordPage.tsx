@@ -1,11 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { Button, Card } from '@heroui/react';
 import { motion } from 'framer-motion';
-import { apiClient } from '../../api/client';
+import { resetPassword } from '../../auth/api';
 import { getErrorMessage } from '../../api/errors';
 import AuthPageShell from '../../components/layout/AuthPageShell';
 import GlassCard from '../../components/shared/GlassCard';
@@ -31,14 +31,13 @@ function ResetPasswordPage() {
   const [searchParams] = useSearchParams();
   const token = searchParams.get('token');
 
+  return <ResetPasswordForm key={token ?? ''} token={token} />;
+}
+
+// Each reset link owns its form state, including results from pending requests.
+function ResetPasswordForm({ token }: { token: string | null }) {
   const [apiError, setApiError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
-
-  // Defensive: reset state when the token changes.
-  useEffect(() => {
-    setSuccess(false);
-    setApiError(null);
-  }, [token]);
 
   const {
     register,
@@ -52,24 +51,22 @@ function ResetPasswordPage() {
     },
   });
 
-  async function onSubmit(values: ResetPasswordValues) {
+  async function onSubmit(values: ResetPasswordValues): Promise<void> {
+    if (!token) return;
+
     setApiError(null);
 
     try {
-      await apiClient.post('/auth/reset-password', {
+      await resetPassword({
         token,
         newPassword: values.newPassword,
       });
 
       setSuccess(true);
-    } catch (err) {
+    } catch (err: unknown) {
       setApiError(getErrorMessage(err));
     }
   }
-
-  // ------------------------------------------
-  // Missing token
-  // ------------------------------------------
 
   if (!token) {
     return (
@@ -124,10 +121,6 @@ function ResetPasswordPage() {
     );
   }
 
-  // ------------------------------------------
-  // Success
-  // ------------------------------------------
-
   if (success) {
     return (
       <AuthPageShell>
@@ -181,14 +174,11 @@ function ResetPasswordPage() {
     );
   }
 
-  // ------------------------------------------
-  // Reset password form
-  // ------------------------------------------
-
   return (
     <AuthPageShell>
       <motion.form
         onSubmit={handleSubmit(onSubmit)}
+        noValidate
         className="w-full max-w-sm"
         variants={containerVariants}
         initial="hidden"
@@ -241,6 +231,7 @@ function ResetPasswordPage() {
                 type="submit"
                 fullWidth
                 isPending={isSubmitting}
+                isDisabled={isSubmitting}
               >
                 {isSubmitting ? 'Updating…' : 'Update password'}
               </Button>

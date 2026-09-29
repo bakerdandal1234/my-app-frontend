@@ -1,23 +1,17 @@
-import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { Button, Card, Input, Label } from '@heroui/react';
 import { motion, AnimatePresence, type Variants } from 'framer-motion';
-import { apiClient } from '../../api/client';
-import { getErrorMessage } from '../../api/errors';
-import { useAuth } from '../../auth/AuthContext';
+import { useTwoFactorSetup } from '../../auth/useTwoFactorSetup';
 import AnimatedBackground, {
   type AnimatedBackgroundBlob,
 } from '../../components/layout/AnimatedBackground';
 import GlassCard from '../../components/shared/GlassCard';
 import { containerVariants, itemVariants, errorVariants } from '../../lib/motion-variants';
 import { twoFactorCodeSchema } from '../../lib/validation';
-import {
-  isTwoFactorSetupResponse,
-  type TwoFactorSetupResponse,
-} from '../../api/guards'
+
 /** Mirrors Verify2faDto (auth/dto/verify-2fa.dto.ts): @Length(6, 6). */
 const codeSchema = z.object({
   code: twoFactorCodeSchema,
@@ -65,17 +59,6 @@ const TWO_FACTOR_BACKGROUND_BLOBS: AnimatedBackgroundBlob[] = [
 ];
 
 function TwoFactorSetupPage() {
-  const { user, setUser } = useAuth();
-
-
-  const [setupData, setSetupData] =
-    useState<TwoFactorSetupResponse | null>(null);
-  const [showDisableForm, setShowDisableForm] = useState(false);
-  const [apiError, setApiError] = useState<string | null>(null);
-  const [isGenerating, setIsGenerating] = useState(false);
-  const [successMessage, setSuccessMessage] =
-    useState<string | null>(null);
-
   const enableForm = useForm<CodeValues>({
     resolver: zodResolver(codeSchema),
     defaultValues: {
@@ -90,88 +73,26 @@ function TwoFactorSetupPage() {
     },
   });
 
-  async function startEnableFlow(): Promise<void> {
-    setApiError(null);
-    setSuccessMessage(null);
-    setIsGenerating(true);
-
-    // إنشاء إعداد جديد قد يبطل السر السابق؛ لا نعرض بياناته القديمة.
-    setSetupData(null);
-
-    try {
-      const res = await apiClient.post<unknown>(
-        '/auth/2fa/generate',
-      );
-
-      if (!isTwoFactorSetupResponse(res.data)) {
-        throw new Error('Unexpected two-factor setup response');
-      }
-
-      setSetupData(res.data);
-    } catch (err: unknown) {
-      setApiError(getErrorMessage(err));
-    } finally {
-      setIsGenerating(false);
-    }
-  }
-
-  async function onSubmitEnable(values: CodeValues) {
-    if (!user) return;
-
-    setApiError(null);
-
-    try {
-      await apiClient.post('/auth/2fa/enable', {
-        code: values.code,
-      });
-
-      setUser({
-        ...user,
-        isTwoFactorEnabled: true,
-      });
-
-      setSetupData(null);
-      enableForm.reset();
-
-      setSuccessMessage(
-        'Two-factor authentication is now enabled.',
-      );
-    } catch (err) {
-      setApiError(getErrorMessage(err));
-    }
-  }
-
-  async function onSubmitDisable(values: CodeValues) {
-    if (!user) return;
-
-    setApiError(null);
-
-    try {
-      await apiClient.post('/auth/2fa/disable', {
-        code: values.code,
-      });
-
-      setUser({
-        ...user,
-        isTwoFactorEnabled: false,
-      });
-
-      setShowDisableForm(false);
-      disableForm.reset();
-
-      setSuccessMessage(
-        'Two-factor authentication has been disabled.',
-      );
-    } catch (err) {
-      setApiError(getErrorMessage(err));
-    }
-  }
-
-  function cancelSetup() {
-    setSetupData(null);
-    setApiError(null);
+  const {
+    user,
+    setupData,
+    showDisableForm,
+    apiError,
+    successMessage,
+    isGenerating,
+    isEnabling,
+    isDisabling,
+    isBusy,
+    canRetryGeneration,
+    generateSetup,
+    enable,
+    disable,
+    openDisableForm,
+    cancel,
+  } = useTwoFactorSetup(() => {
     enableForm.reset();
-  }
+    disableForm.reset();
+  });
 
   if (!user) return null;
 
@@ -281,11 +202,8 @@ function TwoFactorSetupPage() {
                     type="button"
                     variant="danger"
                     fullWidth
-                    onPress={() => {
-                      setApiError(null);
-                      setSuccessMessage(null);
-                      setShowDisableForm(true);
-                    }}
+                    isDisabled={isBusy}
+                    onPress={openDisableForm}
                   >
                     Disable 2FA
                   </Button>
@@ -300,7 +218,7 @@ function TwoFactorSetupPage() {
             {user.isTwoFactorEnabled && showDisableForm && (
               <motion.form
                 variants={itemVariants}
-                onSubmit={disableForm.handleSubmit(onSubmitDisable)}
+                onSubmit={disableForm.handleSubmit(({ code }) => disable(code))}
                 className="flex flex-col gap-4"
               >
                 <div className="rounded-xl border border-amber-500/20 bg-amber-500/10 p-4">
@@ -331,6 +249,7 @@ function TwoFactorSetupPage() {
                     maxLength={6}
                     fullWidth
                     className="tracking-widest"
+                    disabled={isBusy}
                     {...disableForm.register('code')}
                   />
 
@@ -352,11 +271,9 @@ function TwoFactorSetupPage() {
                     type="submit"
                     variant="danger"
                     fullWidth
-                    isPending={
-                      disableForm.formState.isSubmitting
-                    }
+                    isPending={isDisabling}
                   >
-                    {disableForm.formState.isSubmitting
+                    {isDisabling
                       ? 'Disabling…'
                       : 'Confirm disable'}
                   </Button>
@@ -366,10 +283,8 @@ function TwoFactorSetupPage() {
                   type="button"
                   variant="ghost"
                   fullWidth
-                  onPress={() => {
-                    setShowDisableForm(false);
-                    disableForm.reset();
-                  }}
+                  isDisabled={isBusy}
+                  onPress={cancel}
                 >
                   Cancel
                 </Button>
@@ -410,11 +325,12 @@ function TwoFactorSetupPage() {
                     type="button"
                     fullWidth
                     isPending={isGenerating}
-                    onPress={startEnableFlow}
+                    isDisabled={isBusy}
+                    onPress={generateSetup}
                   >
                     {isGenerating
                       ? 'Preparing…'
-                      : 'Enable 2FA'}
+                      : canRetryGeneration ? 'Try again' : 'Enable 2FA'}
                   </Button>
                 </motion.div>
               </motion.div>
@@ -427,7 +343,7 @@ function TwoFactorSetupPage() {
             {!user.isTwoFactorEnabled && setupData && (
               <motion.form
                 variants={itemVariants}
-                onSubmit={enableForm.handleSubmit(onSubmitEnable)}
+                onSubmit={enableForm.handleSubmit(({ code }) => enable(code))}
                 className="flex flex-col gap-4"
               >
                 <p className="text-sm leading-relaxed text-slate-400">
@@ -476,6 +392,7 @@ function TwoFactorSetupPage() {
                     maxLength={6}
                     fullWidth
                     className="tracking-widest"
+                    disabled={isBusy}
                     {...enableForm.register('code')}
                   />
 
@@ -496,11 +413,9 @@ function TwoFactorSetupPage() {
                   <Button
                     type="submit"
                     fullWidth
-                    isPending={
-                      enableForm.formState.isSubmitting
-                    }
+                    isPending={isEnabling}
                   >
-                    {enableForm.formState.isSubmitting
+                    {isEnabling
                       ? 'Confirming…'
                       : 'Confirm & enable'}
                   </Button>
@@ -510,7 +425,8 @@ function TwoFactorSetupPage() {
                   type="button"
                   variant="ghost"
                   fullWidth
-                  onPress={cancelSetup}
+                  isDisabled={isBusy}
+                  onPress={cancel}
                 >
                   Cancel
                 </Button>

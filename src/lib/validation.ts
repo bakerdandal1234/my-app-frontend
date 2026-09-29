@@ -1,5 +1,13 @@
 import { z } from 'zod';
 
+export const emailSchema = z
+  .string()
+  .min(1, 'Email is required.')
+  .email('Please enter a valid email address.');
+
+// Login accepts existing credentials without applying the new-password policy.
+export const loginPasswordSchema = z.string().min(1, 'Password is required.');
+
 /** Mirrors the backend's CreateUserDto/ResetPasswordDto/ChangePasswordDto @Matches() rule. */
 export const PASSWORD_RULE =
   /((?=.*\d)|(?=.*\W+))(?![.\n])(?=.*[A-Z])(?=.*[a-z]).*$/;
