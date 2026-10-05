@@ -1,26 +1,35 @@
 import type { ReactNode } from 'react';
 import { Link } from 'react-router-dom';
+import { motion } from 'framer-motion';
+import { itemVariants } from '../../lib/motion-variants';
 
-/**
- * The "Back to X" pill-button link used in the header row of ProfilePage
- * and SessionsPage (user pages). Deliberately a plain link, not wrapped in
- * a Card element: both usages sit in a page header row, not inside a
- * Card's own footer (unlike StatusLink, which is used on the OAuth/verify
- * status pages and stays as-is).
- */
 interface BackLinkProps {
   to: string;
   children: ReactNode;
+  fullWidth?: boolean;
 }
 
-function BackLink({ to, children }: BackLinkProps) {
+function BackLink({
+  to,
+  children,
+  fullWidth = false,
+}: BackLinkProps) {
   return (
-    <Link
-      to={to}
-      className="rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-sm font-medium text-slate-300 transition-colors hover:bg-white/10 hover:text-white"
+    <motion.div
+      variants={itemVariants}
+      className={fullWidth ? 'w-full' : 'inline-block'}
+      whileHover={{ scale: 1.02 }}
+      whileTap={{ scale: 0.98 }}
     >
-      {children}
-    </Link>
+      <Link
+        to={to}
+        className={`block rounded-lg border border-white/10 bg-white/5 px-4 py-2.5 text-center text-sm font-medium text-slate-200 transition-colors hover:bg-white/10 ${
+          fullWidth ? 'w-full' : ''
+        }`}
+      >
+        {children}
+      </Link>
+    </motion.div>
   );
 }
 

@@ -1,25 +1,24 @@
 import { Routes, Route } from 'react-router-dom';
 import HomePage from './pages/user/HomePage';
-import RegisterPage from './pages/auth/RegisterPage';
-import VerifyEmailPage from './pages/auth/VerifyEmailPage';
-import LoginPage from './pages/auth/LoginPage';
-import ForgotPasswordPage from './pages/auth/ForgotPasswordPage';
-import ResetPasswordPage from './pages/auth/ResetPasswordPage';
-import OAuthCallbackPage from '././pages/auth/OAuthCallbackPage';
+import RegisterPage from './pages/auth/register/RegisterPage';
+import VerifyEmailPage from './pages/auth/email-verification/VerifyEmailPage';
+import LoginPage from './pages/auth/login/LoginPage';
+import ForgotPasswordPage from './pages/auth/password/ForgotPasswordPage';
+import ResetPasswordPage from './pages/auth/password/ResetPasswordPage';
+import OAuthCallbackPage from './pages/auth/oauth/OAuthCallbackPage';
 import TwoFactorSetupPage from './pages/user/SecurityPage';
 import ProfilePage from './pages/user/ProfilePage';
 import SessionsPage from '././pages/user/SessionsPage';
-import AdminUsersPage from './pages/admin/AdminUsersPage';
-import AdminRolesPage from './pages/admin/AdminRolesPage';
-import AdminPermissionsPage from './pages/admin/AdminPermissionsPage';
+import AdminUsersPage from './pages/admin/users/AdminUsersPage';
+import AdminRolesPage from './pages/admin/roles/AdminRolesPage';
+import AdminPermissionsPage from './pages/admin/permissions/AdminPermissionsPage';
 import NotFoundPage from './pages/NotFoundPage';
-import ProtectedRoute from './auth/ProtectedRoute';
-import RequirePermissionRoute from './auth/RequirePermissionRoute';
+import ProtectedRoute from './auth/guards/ProtectedRoute';
+import RequirePermissionRoute from './auth/guards/RequirePermissionRoute';
 import ChangePasswordPage from '././pages/user/ChangePasswordPage';
 import AuthenticatedLayout from './components/layout/AuthenticatedLayout';
 import LandingPage from './pages/LandingPage';
-import { PERMISSIONS } from './auth/permissions';
-import SetPasswordPage from './pages/user/SetPasswordPage';
+import { PERMISSIONS } from './auth/authorization/permissions';
 import LoginHistoryPage from './pages/user/LoginHistoryPage';
 function App() {
   return (
@@ -36,7 +35,6 @@ function App() {
         <Route element={<AuthenticatedLayout />}>
           <Route path="/settings/2fa" element={<TwoFactorSetupPage />} />
           <Route path="/settings/change-password" element={<ChangePasswordPage />} />
-          <Route path="/settings/set-password" element={<SetPasswordPage />} />
           <Route path="/profile" element={<ProfilePage />} />
           <Route path="/sessions" element={<SessionsPage />} />
           <Route path="/login-history" element={<LoginHistoryPage />} />

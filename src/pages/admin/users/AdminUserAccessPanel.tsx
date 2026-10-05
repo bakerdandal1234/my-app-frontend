@@ -1,10 +1,10 @@
 import { AnimatePresence, motion } from 'framer-motion';
 import { Button } from '@heroui/react';
 import { useState } from 'react';
-import { useToast } from '../../ui/ToastContext';
-import { assignRoleToUser, removeRoleFromUser } from '../../auth/authorization-api';
-import { adminListErrorVariants as errorVariants } from '../../lib/motion-variants';
-import type { RoleSummary } from '../../auth/authorization-contracts';
+import { useToast } from '../../../ui/ToastContext';
+import { assignRoleToUser, removeRoleFromUser } from '../../../auth/authorization/authorization-api';
+import { adminListErrorVariants as errorVariants } from '../../../lib/motion-variants';
+import type { RoleSummary } from '../../../auth/authorization/authorization-contracts';
 import { useUserAccess } from './useUserAccess';
 
 interface AdminUserAccessPanelProps {

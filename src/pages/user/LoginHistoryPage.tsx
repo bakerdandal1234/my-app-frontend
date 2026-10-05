@@ -100,7 +100,7 @@ function LoginHistoryPage() {
               Review recent sign-in attempts for your account.
             </p>
           </div>
-          <BackLink to="/profile">Back to profile</BackLink>
+          <BackLink to="/home">Back to home</BackLink>
         </motion.div>
 
         <motion.div variants={itemVariants}>

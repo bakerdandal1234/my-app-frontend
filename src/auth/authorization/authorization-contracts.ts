@@ -1,5 +1,5 @@
-import { isArrayOf, isOptionalText, isRecord, isString } from "../api/validation.ts";
-import { isUserIdentity, type UserIdentity } from "./contracts.ts";
+import { isArrayOf, isOptionalText, isRecord, isString } from "../../api/validation.ts";
+import { isUserIdentity, type UserIdentity } from "../contracts.ts";
 
 export type AdminUser = UserIdentity;
 export const isAdminUser = isUserIdentity;

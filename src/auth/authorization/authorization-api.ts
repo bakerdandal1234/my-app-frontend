@@ -1,5 +1,5 @@
-import { apiClient } from '../api/client.ts';
-import { InvalidApiResponseError, parseResponse } from '../api/validation.ts';
+import { apiClient } from '../../api/client.ts';
+import { InvalidApiResponseError, parseResponse } from '../../api/validation.ts';
 import {
   isAdminUserArray,
   isPermissionItemArray,

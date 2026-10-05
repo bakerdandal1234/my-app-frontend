@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { getErrorMessage } from '../api/errors';
-import { getAuthVersion, subscribeToAccessToken } from '../api/tokenStore';
-import { useAuth } from './AuthContext';
-import { exchangeOAuthCode, verifyTwoFactorLogin } from './api';
+import { getErrorMessage } from '../../api/errors';
+import { getAuthVersion, subscribeToAccessToken } from '../../api/tokenStore';
+import { useAuth } from '../AuthContext';
+import { exchangeOAuthCode, verifyTwoFactorLogin } from '../api';
 
 interface OAuthFlow {
   version: number;

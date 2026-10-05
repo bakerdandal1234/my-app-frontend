@@ -1,20 +1,20 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { getErrorMessage, isAuthRejection } from '../api/errors';
+import { getErrorMessage, isAuthRejection } from '../../api/errors';
 import {
   getAccessToken,
   getAuthVersion,
   setAccessToken,
   subscribeToAccessToken,
-} from '../api/tokenStore';
-import { useAuth } from './AuthContext';
+} from '../../api/tokenStore';
+import { useAuth } from '../AuthContext';
 import {
   getSessions,
   refreshAccessToken,
   revokeAllSessions as revokeAllSessionsRequest,
   revokeSession as revokeSessionRequest,
-} from './api';
-import type { SessionItem } from './contracts';
+} from '../api';
+import type { SessionItem } from '../contracts';
 
 interface SessionsOperation {
   kind: 'load' | 'revoke' | 'revokeAll';

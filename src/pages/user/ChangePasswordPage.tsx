@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import {  useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -12,11 +12,11 @@ import { getAuthVersion, setAccessToken } from '../../api/tokenStore';
 import { useToast } from '../../ui/ToastContext';
 import AuthPageShell from '../../components/layout/AuthPageShell';
 import GlassCard from '../../components/shared/GlassCard';
-import FormField from '../../components/shared/FormField';
+import PasswordField from '../../components/shared/PasswordField';
 import FormErrorBanner from '../../components/shared/FormErrorBanner';
 import { containerVariants, itemVariants } from '../../lib/motion-variants';
 import { passwordSchema } from '../../lib/validation';
-
+import StatusLink from '../../components/shared/StatusLink';
 const changePasswordSchema = z
   .object({
     currentPassword: z.string().min(1, 'Current password is required.'),
@@ -41,6 +41,7 @@ function ChangePasswordPage() {
   const {
     register,
     handleSubmit,
+    control,
     formState: { errors, isSubmitting },
   } = useForm<ChangePasswordValues>({
     resolver: zodResolver(changePasswordSchema),
@@ -100,65 +101,55 @@ function ChangePasswordPage() {
           <Card.Content className="flex flex-col gap-4">
             <FormErrorBanner message={apiError} bannerKey="change-password-error" />
 
-            <FormField
+            <PasswordField
               id="currentPassword"
               label="Current password"
-              type="password"
               autoComplete="current-password"
               registration={register('currentPassword')}
               error={errors.currentPassword}
+              control={control}
+              name="currentPassword"
+              showRequirementHint={false}
             />
 
-            <FormField
+            <PasswordField
               id="newPassword"
               label="New password"
-              type="password"
               autoComplete="new-password"
               registration={register('newPassword')}
               error={errors.newPassword}
-              helperText="8+ characters, with uppercase, lowercase, and a number or symbol."
+              control={control}
+              name="newPassword"
             />
 
-            <FormField
+            <PasswordField
               id="confirmPassword"
               label="Confirm new password"
-              type="password"
               autoComplete="new-password"
               registration={register('confirmPassword')}
               error={errors.confirmPassword}
+              control={control}
+              name="confirmPassword"
+              showRequirementHint={false}
             />
           </Card.Content>
 
-          <Card.Footer className="flex flex-col gap-3">
-            <motion.div
-              variants={itemVariants}
-              className="w-full"
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.98 }}
-            >
+          <StatusLink
+            to="/home"
+            action={
               <Button
                 type="submit"
-                fullWidth
                 variant="primary"
+                fullWidth
                 isPending={isSubmitting}
                 isDisabled={isSubmitting}
               >
                 {isSubmitting ? 'Changing password…' : 'Change password'}
               </Button>
-            </motion.div>
-
-            <motion.p
-              variants={itemVariants}
-              className="text-center text-sm text-slate-400"
-            >
-              <Link
-                to="/home"
-                className="text-indigo-400 transition-colors hover:text-indigo-300 hover:underline"
-              >
-                Back to home
-              </Link>
-            </motion.p>
-          </Card.Footer>
+            }
+          >
+            Back to home
+          </StatusLink>
         </GlassCard>
       </motion.form>
     </AuthPageShell>

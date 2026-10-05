@@ -1,6 +1,6 @@
 import { Outlet } from 'react-router-dom';
-import { useAuth } from './AuthContext';
-import FullPageLoading from '../ui/FullPageLoading';
+import { useAuth } from '../AuthContext';
+import FullPageLoading from '../../ui/FullPageLoading';
 
 interface RequirePermissionRouteProps {
   permission: string;

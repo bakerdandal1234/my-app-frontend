@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
-import { getErrorMessage } from '../api/errors';
-import { getAuthVersion, subscribeToAccessToken } from '../api/tokenStore';
-import { verifyEmail } from './api';
-import { useAuth } from './AuthContext';
-import type { MessageResponse } from './contracts';
+import { getErrorMessage } from '../../api/errors';
+import { getAuthVersion, subscribeToAccessToken } from '../../api/tokenStore';
+import { verifyEmail } from '../api';
+import { useAuth } from '../AuthContext';
+import type { MessageResponse } from '../contracts';
 
 type EmailVerificationState =
   | { status: 'loading'; message: null }

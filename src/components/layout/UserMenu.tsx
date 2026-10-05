@@ -15,7 +15,6 @@ interface UserMenuProps {
   loginHistoryHref?: string;
   securityHref?: string;
   changePasswordHref?: string;
-  setPasswordHref?: string;
 }
 
 export default function UserMenu({
@@ -27,7 +26,6 @@ export default function UserMenu({
   loginHistoryHref = '/login-history',
   securityHref = '/settings/2fa',
   changePasswordHref = '/settings/change-password',
-  setPasswordHref = '/settings/set-password',
 }: UserMenuProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [isLogoutPending, setIsLogoutPending] = useState(false);
@@ -157,14 +155,16 @@ export default function UserMenu({
               >
                 Security
               </Link>
-              <Link
-                to={user.hasPassword ? changePasswordHref : setPasswordHref}
-                onClick={() => setIsOpen(false)}
-                className="flex items-center rounded-xl px-3 py-2.5 text-sm text-slate-200 transition-colors hover:bg-white/10 hover:text-white"
-                role="menuitem"
-              >
-                {user.hasPassword ? 'Change password' : 'Set password'}
-              </Link>
+              {user.hasPassword && (
+                <Link
+                  to={ changePasswordHref }
+                  onClick={() => setIsOpen(false)}
+                  className="flex items-center rounded-xl px-3 py-2.5 text-sm text-slate-200 transition-colors hover:bg-white/10 hover:text-white"
+                  role="menuitem"
+                >
+                   Change password
+                </Link>
+              )}
             </div>
 
             {/* Logout */}

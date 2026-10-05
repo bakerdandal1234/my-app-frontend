@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { useAuth } from './AuthContext';
+import { useAuth } from '../AuthContext';
 
 interface RequirePermissionProps {
   permission: string;

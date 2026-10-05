@@ -5,7 +5,7 @@ import AnimatedBackground, {
 } from '../components/layout/AnimatedBackground';
 import GlassCard from '../components/shared/GlassCard';
 import { useAuth } from '../auth/AuthContext';
-import StatusLink from '../components/shared/StatusLink';
+import BackLink from '../components/shared/BackLink';
 const containerVariants: Variants = {
   hidden: {
     opacity: 0,
@@ -118,10 +118,10 @@ function NotFoundPage() {
               variants={itemVariants}
               className="mt-7"
             >
-              <StatusLink to={homeHref}>
-                Back to home
-              </StatusLink>
 
+              <BackLink to={homeHref} >
+                Back to home
+              </BackLink>
             </motion.div>
           </Card.Content>
         </GlassCard>

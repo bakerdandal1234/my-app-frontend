@@ -2,31 +2,41 @@ import type { ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Card } from '@heroui/react';
-import { statusItemVariants } from '../../lib/motion-variants';
+import { itemVariants } from '../../lib/motion-variants';
 
-/**
- * Shared status-card footer with an animated navigation link.
- */
-interface StatusFooterLinkProps {
+interface StatusLinkProps {
   to: string;
   children: ReactNode;
+  action?: ReactNode;
+  text?: string;
 }
 
-function StatusLink({ to, children }: StatusFooterLinkProps) {
+function StatusLink({ to, children, action, text }: StatusLinkProps) {
   return (
-    <Card.Footer className="justify-center border-t border-white/10 px-6 py-5">
-      <motion.div
-        variants={statusItemVariants}
-        whileHover={{ x: 3 }}
-        transition={{ duration: 0.2 }}
+    <Card.Footer className="flex flex-col gap-3">
+      {action != null && (
+        <motion.div
+          variants={itemVariants}
+          className="w-full"
+          whileHover={{ scale: 1.02 }}
+          whileTap={{ scale: 0.98 }}
+        >
+          {action}
+        </motion.div>
+      )}
+
+      <motion.p
+        variants={itemVariants}
+        className="text-center text-sm text-slate-400"
       >
+        {text && <>{text}{' '}</>}
         <Link
           to={to}
-          className="rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-sm font-medium text-slate-300 transition-colors hover:bg-white/10 hover:text-white"
+          className="text-indigo-400 transition-colors hover:text-indigo-300 hover:underline"
         >
           {children}
         </Link>
-      </motion.div>
+      </motion.p>
     </Card.Footer>
   );
 }

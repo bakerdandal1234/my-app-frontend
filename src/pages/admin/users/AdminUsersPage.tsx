@@ -1,18 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { getAdminUsers, getRoleSummaries } from '../../auth/authorization-api';
-import { getAuthVersion, subscribeToAccessToken } from '../../api/tokenStore';
-import { getErrorMessage } from '../../api/errors';
+import { getAdminUsers, getRoleSummaries } from '../../../auth/authorization/authorization-api';
+import { getAuthVersion, subscribeToAccessToken } from '../../../api/tokenStore';
+import { getErrorMessage } from '../../../api/errors';
 import AnimatedBackground, {
   type AnimatedBackgroundBlob,
-} from '../../components/layout/AnimatedBackground';
-import GlassCard from '../../components/shared/GlassCard';
+} from '../../../components/layout/AnimatedBackground';
+import GlassCard from '../../../components/shared/GlassCard';
 import {
   adminListContainerVariants as containerVariants,
   adminListItemVariants as itemVariants,
   adminListErrorVariants as errorVariants,
-} from '../../lib/motion-variants';
-import type { AdminUser, RoleSummary } from '../../auth/authorization-contracts';
+} from '../../../lib/motion-variants';
+import type { AdminUser, RoleSummary } from '../../../auth/authorization/authorization-contracts';
 import AdminUserRow from './AdminUserRow';
 
 const ADMIN_USERS_BACKGROUND_WRAPPER_CLASSNAME =

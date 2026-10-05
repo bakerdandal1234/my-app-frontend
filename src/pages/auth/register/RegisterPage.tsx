@@ -1,19 +1,20 @@
 import { useState } from 'react';
-import { Link } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { Button, Card } from '@heroui/react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { register as registerAccount } from '../../auth/api';
-import { getErrorMessage } from '../../api/errors';
-import AuthPageShell from '../../components/layout/AuthPageShell';
-import GlassCard from '../../components/shared/GlassCard';
-import FormField from '../../components/shared/FormField';
-import FormErrorBanner from '../../components/shared/FormErrorBanner';
-import { containerVariants, itemVariants } from '../../lib/motion-variants';
-import { emailSchema, passwordSchema } from '../../lib/validation';
-
+import { register as registerAccount } from '../../../auth/api';
+import { getErrorMessage } from '../../../api/errors';
+import AuthPageShell from '../../../components/layout/AuthPageShell';
+import GlassCard from '../../../components/shared/GlassCard';
+import FormField from '../../../components/shared/FormField';
+import PasswordField from '../../../components/shared/PasswordField';
+import FormErrorBanner from '../../../components/shared/FormErrorBanner';
+import { containerVariants, itemVariants } from '../../../lib/motion-variants';
+import { emailSchema, passwordSchema } from '../../../lib/validation';
+import StatusLink from '../../../components/shared/StatusLink';
+import BackLink from '../../../components/shared/BackLink';
 const registerSchema = z
   .object({
     email: emailSchema,
@@ -48,6 +49,7 @@ function RegisterPage() {
   const {
     register,
     handleSubmit,
+    control,
     formState: { errors, isSubmitting },
   } = useForm<RegisterFormValues>({
     resolver: zodResolver(registerSchema),
@@ -116,12 +118,9 @@ function RegisterPage() {
               </Card.Content>
 
               <Card.Footer>
-                <Link
-                  to="/"
-                  className="text-sm text-indigo-400 hover:underline"
-                >
+                <BackLink to="/" fullWidth>
                   Back to home
-                </Link>
+                </BackLink>
               </Card.Footer>
             </GlassCard>
           </motion.div>
@@ -178,39 +177,36 @@ function RegisterPage() {
                   />
                 </div>
 
-                {/* Password */}
+                {/* Password — live progress bar + one-line hint */}
 
-                <FormField
+                <PasswordField
                   id="password"
                   label="Password"
-                  type="password"
                   autoComplete="new-password"
                   registration={register('password')}
                   error={errors.password}
-                  helperText="8+ characters, with uppercase, lowercase, and a number or symbol."
+                  control={control}
+                  name="password"
                 />
 
-                {/* Confirm password */}
+                {/* Confirm password — same component, hint off, just
+                    the show/hide toggle + the "match" error. */}
 
-                <FormField
+                <PasswordField
                   id="confirmPassword"
                   label="Confirm password"
-                  type="password"
                   autoComplete="new-password"
                   registration={register('confirmPassword')}
                   error={errors.confirmPassword}
+                  control={control}
+                  name="confirmPassword"
+                  showRequirementHint={false}
                 />
               </Card.Content>
 
-              <Card.Footer className="flex flex-col gap-3">
-                {/* Submit button */}
-
-                <motion.div
-                  variants={itemVariants}
-                  className="w-full"
-                  whileHover={{ scale: 1.02 }}
-                  whileTap={{ scale: 0.98 }}
-                >
+              <StatusLink
+                to="/"
+                action={
                   <Button
                     type="submit"
                     fullWidth
@@ -218,26 +214,12 @@ function RegisterPage() {
                     isDisabled={isSubmitting}
                     className="shadow-lg shadow-indigo-500/25"
                   >
-                    {isSubmitting
-                      ? 'Creating account…'
-                      : 'Create account'}
+                    {isSubmitting ? 'Creating account…' : 'Create account'}
                   </Button>
-                </motion.div>
-
-                {/* Back to home */}
-
-                <motion.p
-                  variants={itemVariants}
-                  className="text-center text-sm text-slate-400"
-                >
-                  <Link
-                    to="/"
-                    className="text-indigo-400 hover:underline"
-                  >
-                    Back to home
-                  </Link>
-                </motion.p>
-              </Card.Footer>
+                }
+              >
+                Back to home
+              </StatusLink>
             </GlassCard>
           </motion.form>
         )}

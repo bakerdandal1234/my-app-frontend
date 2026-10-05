@@ -1,19 +1,19 @@
 import { useSearchParams } from 'react-router-dom';
 import { Card, Spinner } from '@heroui/react';
 import { AnimatePresence, motion, type Variants } from 'framer-motion';
-import { useEmailVerification } from '../../auth/useEmailVerification';
+import { useEmailVerification } from '../../../auth/hooks/useEmailVerification';
 import AnimatedBackground, {
   type AnimatedBackgroundBlob,
   type AnimatedBackgroundPulseBlob,
-} from '../../components/layout/AnimatedBackground';
-import GlassCard from '../../components/shared/GlassCard';
-import StatusIconHeader from '../../components/shared/StatusIconHeader';
-import StatusLink from '../../components/shared/StatusLink';
+} from '../../../components/layout/AnimatedBackground';
+import GlassCard from '../../../components/shared/GlassCard';
+import StatusIconHeader from '../../../components/shared/StatusIconHeader';
+import BackLink from '../../../components/shared/BackLink';
 import {
   statusContainerVariants as containerVariants,
   statusItemVariants as itemVariants,
   statusIconVariants as iconVariants,
-} from '../../lib/motion-variants';
+} from '../../../lib/motion-variants';
 
 // containerVariants / itemVariants / iconVariants now come from the shared
 // ../../lib/motion-variants (this "status page" family is also used by
@@ -202,7 +202,12 @@ function VerifyEmailPage() {
             )}
           </AnimatePresence>
 
-          <StatusLink to="/">Back to home</StatusLink>
+
+          <Card.Footer>
+            <BackLink to="/home" fullWidth>
+              Back to home
+            </BackLink>
+          </Card.Footer>
         </GlassCard>
       </motion.div>
     </div>

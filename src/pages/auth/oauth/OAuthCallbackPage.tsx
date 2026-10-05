@@ -1,14 +1,14 @@
 import { useSearchParams } from 'react-router-dom';
 import { Button, Card } from '@heroui/react';
 import { motion } from 'framer-motion';
-import { useOAuthCallback } from '../../auth/useOAuthCallback';
-import AuthPageShell from '../../components/layout/AuthPageShell';
-import GlassCard from '../../components/shared/GlassCard';
-import FormErrorBanner from '../../components/shared/FormErrorBanner';
-import TwoFactorChallengeForm from '../../components/shared/TwoFactorChallengeForm';
-import StatusLink from '../../components/shared/StatusLink';
-import FullPageLoading from '../../ui/FullPageLoading';
-import { statusContainerVariants } from '../../lib/motion-variants';
+import { useOAuthCallback } from '../../../auth/hooks/useOAuthCallback';
+import AuthPageShell from '../../../components/layout/AuthPageShell';
+import GlassCard from '../../../components/shared/GlassCard';
+import FormErrorBanner from '../../../components/shared/FormErrorBanner';
+import TwoFactorChallengeForm from '../../../components/shared/TwoFactorChallengeForm';
+import FullPageLoading from '../../../ui/FullPageLoading';
+import { statusContainerVariants } from '../../../lib/motion-variants';
+import BackLink from '../../../components/shared/BackLink';
 
 function OAuthCallbackPage() {
   const [searchParams] = useSearchParams();
@@ -67,7 +67,11 @@ function OAuthCallbackFlow({
               <FormErrorBanner message={error} />
               {canRetry && <Button type="button" onPress={retry}>Try again</Button>}
             </Card.Content>
-            <StatusLink to="/login">Back to login</StatusLink>
+            <Card.Footer>
+              <BackLink to="/login" fullWidth>
+                Back to login
+              </BackLink>
+            </Card.Footer>
           </GlassCard>
         </motion.div>
       </AuthPageShell>

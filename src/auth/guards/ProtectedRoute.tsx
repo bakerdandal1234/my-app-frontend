@@ -1,6 +1,6 @@
 import { Navigate, Outlet, useLocation } from 'react-router-dom';
-import { useAuth } from './AuthContext';
-import FullPageLoading from '../ui/FullPageLoading';
+import { useAuth } from '../AuthContext';
+import FullPageLoading from '../../ui/FullPageLoading';
 
 /**
  * Gate for any route that requires a logged-in user. Used via nested

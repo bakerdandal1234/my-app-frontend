@@ -1,6 +1,6 @@
 import { Button, Card } from '@heroui/react';
 import { motion, AnimatePresence, type Variants } from 'framer-motion';
-import { useSessions } from '../../auth/useSessions';
+import { useSessions } from '../../auth/hooks/useSessions';
 import AnimatedBackground, {
   type AnimatedBackgroundBlob,
 } from '../../components/layout/AnimatedBackground';

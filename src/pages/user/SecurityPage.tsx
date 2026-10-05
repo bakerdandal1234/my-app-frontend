@@ -1,17 +1,16 @@
-import { Link } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { Button, Card, Input, Label } from '@heroui/react';
 import { motion, AnimatePresence, type Variants } from 'framer-motion';
-import { useTwoFactorSetup } from '../../auth/useTwoFactorSetup';
+import { useTwoFactorSetup } from '../../auth/hooks/useTwoFactorSetup';
 import AnimatedBackground, {
   type AnimatedBackgroundBlob,
 } from '../../components/layout/AnimatedBackground';
 import GlassCard from '../../components/shared/GlassCard';
 import { containerVariants, itemVariants, errorVariants } from '../../lib/motion-variants';
 import { twoFactorCodeSchema } from '../../lib/validation';
-
+import BackLink from '../../components/shared/BackLink';
 /** Mirrors Verify2faDto (auth/dto/verify-2fa.dto.ts): @Length(6, 6). */
 const codeSchema = z.object({
   code: twoFactorCodeSchema,
@@ -435,17 +434,9 @@ function TwoFactorSetupPage() {
           </Card.Content>
 
           <Card.Footer>
-            <motion.div
-              variants={itemVariants}
-              className="w-full"
-            >
-              <Link
-                to="/home"
-                className="text-sm text-indigo-400 transition-colors hover:text-indigo-300 hover:underline"
-              >
-                Back to home
-              </Link>
-            </motion.div>
+            <BackLink to="/home" fullWidth>
+              Back to home
+            </BackLink>
           </Card.Footer>
         </GlassCard>
       </motion.main>

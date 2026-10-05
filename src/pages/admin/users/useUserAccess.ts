@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { getErrorMessage } from '../../api/errors';
-import { getUserAccess } from '../../auth/authorization-api';
-import type { UserAccess } from '../../auth/authorization-contracts';
-import { getAuthVersion, subscribeToAccessToken } from '../../api/tokenStore';
+import { getErrorMessage } from '../../../api/errors';
+import { getUserAccess } from '../../../auth/authorization/authorization-api';
+import type { UserAccess } from '../../../auth/authorization/authorization-contracts';
+import { getAuthVersion, subscribeToAccessToken } from '../../../api/tokenStore';
 
 interface AccessScope {
   userId: string;

@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import type { AdminUser, RoleSummary } from '../../auth/authorization-contracts';
+import type { AdminUser, RoleSummary } from '../../../auth/authorization/authorization-contracts';
 import AdminUserAccessPanel from './AdminUserAccessPanel';
 
 interface AdminUserRowProps {

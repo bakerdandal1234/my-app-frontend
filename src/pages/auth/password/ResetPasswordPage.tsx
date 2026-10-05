@@ -1,19 +1,20 @@
 import { useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import {  useSearchParams } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { Button, Card } from '@heroui/react';
 import { motion } from 'framer-motion';
-import { resetPassword } from '../../auth/api';
-import { getErrorMessage } from '../../api/errors';
-import AuthPageShell from '../../components/layout/AuthPageShell';
-import GlassCard from '../../components/shared/GlassCard';
-import FormField from '../../components/shared/FormField';
-import FormErrorBanner from '../../components/shared/FormErrorBanner';
-import { containerVariants, itemVariants } from '../../lib/motion-variants';
-import { passwordSchema } from '../../lib/validation';
-
+import { resetPassword } from '../../../auth/api';
+import { getErrorMessage } from '../../../api/errors';
+import AuthPageShell from '../../../components/layout/AuthPageShell';
+import GlassCard from '../../../components/shared/GlassCard';
+import PasswordField from '../../../components/shared/PasswordField';
+import FormErrorBanner from '../../../components/shared/FormErrorBanner';
+import { containerVariants, itemVariants } from '../../../lib/motion-variants';
+import { passwordSchema } from '../../../lib/validation';
+import StatusLink from '../../../components/shared/StatusLink';
+import BackLink from '../../../components/shared/BackLink';
 /** Mirrors ResetPasswordDto (auth/dto/reset-password.dto.ts). */
 const resetPasswordSchema = z
   .object({
@@ -42,6 +43,7 @@ function ResetPasswordForm({ token }: { token: string | null }) {
   const {
     register,
     handleSubmit,
+    control,
     formState: { errors, isSubmitting },
   } = useForm<ResetPasswordValues>({
     resolver: zodResolver(resetPasswordSchema),
@@ -100,20 +102,11 @@ function ResetPasswordForm({ token }: { token: string | null }) {
               </motion.p>
             </Card.Content>
 
+           
             <Card.Footer>
-              <motion.div
-                variants={itemVariants}
-                className="w-full"
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
-              >
-                <Link
-                  to="/forgot-password"
-                  className="block w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2.5 text-center text-sm font-medium text-slate-200 transition-colors hover:bg-white/10"
-                >
-                  Request a new link
-                </Link>
-              </motion.div>
+              <BackLink to="/forgot-password" fullWidth>
+                Request a new link
+              </BackLink>
             </Card.Footer>
           </GlassCard>
         </motion.div>
@@ -154,19 +147,9 @@ function ResetPasswordForm({ token }: { token: string | null }) {
             </Card.Content>
 
             <Card.Footer>
-              <motion.div
-                variants={itemVariants}
-                className="w-full"
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
-              >
-                <Link
-                  to="/login"
-                  className="block w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2.5 text-center text-sm font-medium text-slate-200 transition-colors hover:bg-white/10"
-                >
-                  Go to login
-                </Link>
-              </motion.div>
+              <BackLink to="/login" fullWidth>
+                Back to login
+              </BackLink>
             </Card.Footer>
           </GlassCard>
         </motion.div>
@@ -200,33 +183,32 @@ function ResetPasswordForm({ token }: { token: string | null }) {
           <Card.Content className="flex flex-col gap-4">
             <FormErrorBanner message={apiError} bannerKey="reset-password-error" />
 
-            <FormField
+            <PasswordField
               id="newPassword"
               label="New password"
-              type="password"
               autoComplete="new-password"
               registration={register('newPassword')}
               error={errors.newPassword}
-              helperText="8+ characters, with uppercase, lowercase, and a number or symbol."
+              control={control}
+              name="newPassword"
             />
 
-            <FormField
+            <PasswordField
               id="confirmPassword"
               label="Confirm new password"
-              type="password"
               autoComplete="new-password"
               registration={register('confirmPassword')}
               error={errors.confirmPassword}
+              control={control}
+              name="confirmPassword"
+              showRequirementHint={false}
             />
           </Card.Content>
 
-          <Card.Footer className="flex flex-col gap-3">
-            <motion.div
-              variants={itemVariants}
-              className="w-full"
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.98 }}
-            >
+          <StatusLink
+            to="/login"
+            text="Remember your password?"
+            action={
               <Button
                 type="submit"
                 fullWidth
@@ -235,21 +217,10 @@ function ResetPasswordForm({ token }: { token: string | null }) {
               >
                 {isSubmitting ? 'Updating…' : 'Update password'}
               </Button>
-            </motion.div>
-
-            <motion.p
-              variants={itemVariants}
-              className="text-center text-sm text-slate-400"
-            >
-              Remember your password?{' '}
-              <Link
-                to="/login"
-                className="text-indigo-400 hover:underline"
-              >
-                Back to login
-              </Link>
-            </motion.p>
-          </Card.Footer>
+            }
+          >
+            Back to login
+          </StatusLink>
         </GlassCard>
       </motion.form>
     </AuthPageShell>

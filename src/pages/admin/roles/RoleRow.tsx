@@ -1,8 +1,8 @@
 import { motion } from 'framer-motion';
 import type { UseFormReturn } from 'react-hook-form';
 import { Button, Input } from '@heroui/react';
-import type { PermissionItem, RoleItem } from '../../auth/authorization-contracts';
-import { itemVariants } from '../../lib/motion-variants';
+import type { PermissionItem, RoleItem } from '../../../auth/authorization/authorization-contracts';
+import { itemVariants } from '../../../lib/motion-variants';
 import type { RoleFormValues } from './role-schema';
 import RolePermissionsPanel from './RolePermissionsPanel';
 

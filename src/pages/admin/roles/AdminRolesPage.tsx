@@ -3,28 +3,28 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { motion, AnimatePresence, type Variants } from 'framer-motion';
 import { Button } from '@heroui/react';
-import { useAuth } from '../../auth/AuthContext';
-import { getRoles, getPermissions, createRole, updateRole, deleteRole, assignPermissionToRole, removePermissionFromRole } from '../../auth/authorization-api';
-import { getAuthVersion, subscribeToAccessToken } from '../../api/tokenStore';
-import { getErrorMessage } from '../../api/errors';
-import { useToast } from '../../ui/ToastContext';
+import { useAuth } from '../../../auth/AuthContext';
+import { getRoles, getPermissions, createRole, updateRole, deleteRole, assignPermissionToRole, removePermissionFromRole } from '../../../auth/authorization/authorization-api';
+import { getAuthVersion, subscribeToAccessToken } from '../../../api/tokenStore';
+import { getErrorMessage } from '../../../api/errors';
+import { useToast } from '../../../ui/ToastContext';
 import AnimatedBackground, {
   type AnimatedBackgroundBlob,
   type AnimatedBackgroundPulseBlob,
-} from '../../components/layout/AnimatedBackground';
-import GlassCard from '../../components/shared/GlassCard';
+} from '../../../components/layout/AnimatedBackground';
+import GlassCard from '../../../components/shared/GlassCard';
 import {
   adminListItemVariants as itemVariants,
   adminListErrorVariants as errorVariants,
-} from '../../lib/motion-variants';
-import type { RoleItem, PermissionItem } from '../../auth/authorization-contracts';
-import { PERMISSIONS, formatPermission } from '../../auth/permissions';
+} from '../../../lib/motion-variants';
+import type { RoleItem, PermissionItem } from '../../../auth/authorization/authorization-contracts';
+import { PERMISSIONS, formatPermission } from '../../../auth/authorization/permissions';
 import { roleSchema, type RoleFormValues } from './role-schema';
 import CreateRoleForm from './CreateRoleForm';
 import RoleRow from './RoleRow';
 
 // This page's containerVariants intentionally has no opacity step (see
-// ../../lib/motion-variants for the shared adminListContainerVariants used
+// ../../../lib/motion-variants for the shared adminListContainerVariants used
 // by AdminUsersPage/AdminPermissionsPage, which do fade in on load — kept
 // separate here rather than changing this page's load animation).
 const containerVariants: Variants = {

@@ -4,21 +4,21 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from '@heroui/react';
 
-import { getPermissions, createPermission, updatePermission, deletePermission } from '../../auth/authorization-api';
-import { getAuthVersion, subscribeToAccessToken } from '../../api/tokenStore';
-import { getErrorMessage } from '../../api/errors';
-import { useToast } from '../../ui/ToastContext';
+import { getPermissions, createPermission, updatePermission, deletePermission } from '../../../auth/authorization/authorization-api';
+import { getAuthVersion, subscribeToAccessToken } from '../../../api/tokenStore';
+import { getErrorMessage } from '../../../api/errors';
+import { useToast } from '../../../ui/ToastContext';
 import AnimatedBackground, {
   type AnimatedBackgroundBlob,
-} from '../../components/layout/AnimatedBackground';
-import GlassCard from '../../components/shared/GlassCard';
+} from '../../../components/layout/AnimatedBackground';
+import GlassCard from '../../../components/shared/GlassCard';
 import {
   adminListContainerVariants as containerVariants,
   adminListItemVariants as itemVariants,
   adminListErrorVariants as errorVariants,
-} from '../../lib/motion-variants';
-import type { PermissionItem } from '../../auth/authorization-contracts';
-import { formatPermission } from '../../auth/permissions';
+} from '../../../lib/motion-variants';
+import type { PermissionItem } from '../../../auth/authorization/authorization-contracts';
+import { formatPermission } from '../../../auth/authorization/permissions';
 import { permissionSchema, type PermissionFormValues } from './permission-schema';
 import CreatePermissionForm from './CreatePermissionForm';
 import PermissionRow from './PermissionRow';

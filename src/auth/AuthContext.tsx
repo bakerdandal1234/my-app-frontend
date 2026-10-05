@@ -17,7 +17,7 @@ import {
 } from '../api/tokenStore';
 import { useToast } from '../ui/ToastContext';
 import { getCurrentUser, logoutSession, refreshAccessToken } from './api';
-import { getCurrentUserAccess } from './authorization-api';
+import { getCurrentUserAccess } from './authorization/authorization-api';
 import type { AuthUser } from './contracts';
 
 export type { AuthUser } from './contracts';

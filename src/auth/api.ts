@@ -125,10 +125,6 @@ export async function changePassword({
   });
 }
 
-export async function setPassword(newPassword: string): Promise<void> {
-  await apiClient.post<unknown>('/auth/set-password', { newPassword });
-}
-
 export async function exchangeOAuthCode(code: string): Promise<AccessTokenResponse> {
   const response = await apiClient.post<unknown>('/auth/oauth/exchange', { code });
   return parseResponse(response.data, isAccessTokenResponse);

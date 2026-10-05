@@ -1,8 +1,8 @@
 import { motion } from 'framer-motion';
 import { Button } from '@heroui/react';
 import type { UseFormReturn } from 'react-hook-form';
-import type { PermissionItem } from '../../auth/authorization-contracts';
-import { formatPermission } from '../../auth/permissions';
+import type { PermissionItem } from '../../../auth/authorization/authorization-contracts';
+import { formatPermission } from '../../../auth/authorization/permissions';
 import { PermissionFormFields } from './CreatePermissionForm';
 import type { PermissionFormValues } from './permission-schema';
 

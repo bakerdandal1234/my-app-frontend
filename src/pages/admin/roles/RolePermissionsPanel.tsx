@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import { Button } from '@heroui/react';
-import type { PermissionItem, RoleItem } from '../../auth/authorization-contracts';
-import { formatPermission } from '../../auth/permissions';
+import type { PermissionItem, RoleItem } from '../../../auth/authorization/authorization-contracts';
+import { formatPermission } from '../../../auth/authorization/permissions';
 
 interface RolePermissionsPanelProps {
   role: RoleItem;

@@ -1,9 +1,9 @@
 import { useAuth } from '../../auth/AuthContext';
 import AppHeader, { type HeaderNavigationItem } from './AppHeader';
 import { Link, Outlet, useLocation } from 'react-router-dom';
-import RequirePermission from '../../auth/RequirePermission';
+import RequirePermission from '../../auth/guards/RequirePermission';
 import UserMenu from './UserMenu';
-import { PERMISSIONS } from '../../auth/permissions';
+import { PERMISSIONS } from '../../auth/authorization/permissions';
 const ADMIN_NAVIGATION: HeaderNavigationItem[] = [
   { label: 'Users', href: '/admin/users' },
   { label: 'Roles', href: '/admin/roles' },

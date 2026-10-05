@@ -1,19 +1,19 @@
 import { useState } from 'react';
-import { Link } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { Button, Card } from '@heroui/react';
 import { motion } from 'framer-motion';
-import { requestPasswordReset } from '../../auth/api';
-import { getErrorMessage } from '../../api/errors';
-import AuthPageShell from '../../components/layout/AuthPageShell';
-import GlassCard from '../../components/shared/GlassCard';
-import FormField from '../../components/shared/FormField';
-import FormErrorBanner from '../../components/shared/FormErrorBanner';
-import { containerVariants, itemVariants } from '../../lib/motion-variants';
-import { emailSchema } from '../../lib/validation';
-
+import { requestPasswordReset } from '../../../auth/api';
+import { getErrorMessage } from '../../../api/errors';
+import AuthPageShell from '../../../components/layout/AuthPageShell';
+import GlassCard from '../../../components/shared/GlassCard';
+import FormField from '../../../components/shared/FormField';
+import FormErrorBanner from '../../../components/shared/FormErrorBanner';
+import { containerVariants, itemVariants } from '../../../lib/motion-variants';
+import { emailSchema } from '../../../lib/validation';
+import StatusLink from '../../../components/shared/StatusLink';
+import BackLink  from '../../../components/shared/BackLink';
 /** Mirrors ForgotPasswordDto (auth/dto/forgot-password.dto.ts). */
 const forgotPasswordSchema = z.object({
   email: emailSchema,
@@ -82,21 +82,11 @@ function ForgotPasswordPage() {
               </motion.div>
             </Card.Content>
 
-            <Card.Footer>
-              <motion.div
-                variants={itemVariants}
-                className="w-full"
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
-              >
-                <Link
-                  to="/login"
-                  className="block w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2.5 text-center text-sm font-medium text-slate-200 transition-colors hover:bg-white/10"
-                >
+              <Card.Footer>
+                <BackLink to="/login" fullWidth>
                   Back to login
-                </Link>
-              </motion.div>
-            </Card.Footer>
+                </BackLink>
+              </Card.Footer>
           </GlassCard>
         </motion.div>
       </AuthPageShell>
@@ -141,13 +131,10 @@ function ForgotPasswordPage() {
             />
           </Card.Content>
 
-          <Card.Footer className="flex flex-col gap-3">
-            <motion.div
-              variants={itemVariants}
-              className="w-full"
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.98 }}
-            >
+          <StatusLink
+            to="/login"
+            text="Remember your password?"
+            action={
               <Button
                 type="submit"
                 fullWidth
@@ -156,21 +143,10 @@ function ForgotPasswordPage() {
               >
                 {isSubmitting ? 'Sending…' : 'Send reset link'}
               </Button>
-            </motion.div>
-
-            <motion.p
-              variants={itemVariants}
-              className="text-center text-sm text-slate-400"
-            >
-              Remember your password?{' '}
-              <Link
-                to="/login"
-                className="text-indigo-400 hover:underline"
-              >
-                Back to login
-              </Link>
-            </motion.p>
-          </Card.Footer>
+            }
+          >
+            Back to login
+          </StatusLink>
         </GlassCard>
       </motion.form>
     </AuthPageShell>

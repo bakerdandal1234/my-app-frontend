@@ -1,17 +1,17 @@
 import { useLayoutEffect, useRef, useState } from 'react';
-import { getErrorMessage } from '../api/errors';
+import { getErrorMessage } from '../../api/errors';
 import {
   getAccessToken,
   getAuthVersion,
   subscribeToAccessToken,
-} from '../api/tokenStore';
-import { useAuth } from './AuthContext';
+} from '../../api/tokenStore';
+import { useAuth } from '../AuthContext';
 import {
   disableTwoFactor,
   enableTwoFactor,
   generateTwoFactorSetup,
-} from './api';
-import type { TwoFactorSetupResponse } from './contracts';
+} from '../api';
+import type { TwoFactorSetupResponse } from '../contracts';
 
 type SetupOperation = 'generate' | 'enable' | 'disable';
 
